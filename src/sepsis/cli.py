@@ -5,6 +5,7 @@
     sepsis explore              univariate screen, collinearity, cross-site drift
     sepsis train                fit baseline, logistic, XGBoost and GRU
     sepsis evaluate             calibrate, blend, score, write REPORT.md
+    sepsis experiments          run the registered ablations and shift experiments
     sepsis all                  everything, in order
 """
 
@@ -43,6 +44,9 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("evaluate", help="calibrate, blend and report")
 
+    p_exp = sub.add_parser("experiments", help="run the registered experiments")
+    p_exp.add_argument("--only", nargs="*", default=[], help="run only these experiments")
+
     p_all = sub.add_parser("all", help="run every stage")
     p_all.add_argument("--skip", nargs="*", default=[],
                        choices=["clinical_rule", "logistic", "xgboost", "gru"])
@@ -70,6 +74,9 @@ def main(argv: list[str] | None = None) -> int:
         pipeline.stage_train(frames, pipeline.stage_explore(frames, cfg), cfg, skip=tuple(args.skip))
     elif args.command == "evaluate":
         pipeline.stage_evaluate(cfg)
+        write_report(cfg)
+    elif args.command == "experiments":
+        pipeline.stage_experiments(cfg, only=tuple(args.only))
         write_report(cfg)
     elif args.command == "all":
         pipeline.run_all(cfg, skip=tuple(args.skip))

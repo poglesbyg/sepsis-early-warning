@@ -139,6 +139,28 @@ def write_report(cfg: Config = CFG) -> Path:
             "already suspected sepsis is not an early warning.\n"
         )
 
+    # --- experiment layer -------------------------------------------------
+    from .experiments import REGISTRY
+
+    experiment_sections = []
+    for name in REGISTRY:
+        prose_path = cfg.reports_dir / f"experiment_{name}.md"
+        table_path = cfg.reports_dir / f"experiment_{name}.csv"
+        if prose_path.exists() and table_path.exists():
+            experiment_sections.append((name, prose_path.read_text(), pd.read_csv(table_path)))
+
+    if experiment_sections:
+        add("## Experiments\n")
+        add(
+            "Each experiment changes exactly one thing, refits, and reports what "
+            "that change was worth. Every one of them asserts its own invariants "
+            "before returning, so a variant that failed to commit the mistake it "
+            "was studying raises rather than publishing a plausible wrong number.\n"
+        )
+        for _, prose, table in experiment_sections:
+            add(prose)
+            add(table.to_markdown(index=False, floatfmt=".4f") + "\n")
+
     add("## Statistical analysis\n")
     if screen is not None:
         n_sig = int(screen["significant"].sum())

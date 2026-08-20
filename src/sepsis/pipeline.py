@@ -397,8 +397,41 @@ def stage_evaluate(cfg: Config = CFG, models: tuple[str, ...] = MODELS) -> dict:
     return payload
 
 
+# --------------------------------------------------------------------------
+# Stage 4b: experiments
+# --------------------------------------------------------------------------
+def stage_experiments(cfg: Config = CFG, only: tuple[str, ...] = ()) -> dict:
+    """Run the registered experiments and persist each one's table, prose and metadata.
+
+    Each experiment validates its own result before returning, so anything that
+    reaches disk here has already asserted that it measured what it claims to
+    measure. The report generator reads these files; it never re-runs anything.
+    """
+    from .experiments import REGISTRY
+
+    cfg.ensure_dirs()
+    results = {}
+    for name, fn in REGISTRY.items():
+        if only and name not in only:
+            continue
+        t = time.time()
+        result = fn(cfg=cfg)
+        result.table.to_csv(cfg.reports_dir / f"experiment_{name}.csv", index=False)
+        (cfg.reports_dir / f"experiment_{name}.md").write_text(
+            f"### {result.title}\n\n{result.prose}\n"
+        )
+        (cfg.reports_dir / f"experiment_{name}.json").write_text(
+            json.dumps(result.metadata, indent=2, default=float)
+        )
+        _log("experiments", f"{name}: {len(result.table)} rows in {time.time() - t:.0f}s")
+        results[name] = result
+    return results
+
+
 def run_all(cfg: Config = CFG, skip: tuple[str, ...] = ()) -> dict:
     frames = stage_features(cfg)
     explore = stage_explore(frames, cfg)
     stage_train(frames, explore, cfg, skip=skip)
-    return stage_evaluate(cfg)
+    payload = stage_evaluate(cfg)
+    stage_experiments(cfg)
+    return payload

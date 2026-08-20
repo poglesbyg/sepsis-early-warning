@@ -1,0 +1,8 @@
+{
+  "baseline_auroc": 0.8206006670668384,
+  "row_split_inflation": 0.02754881507300433,
+  "lookahead_inflation": 0.005561733832583071,
+  "admissions_on_both_sides": 17236,
+  "admissions_in_pool": 17285,
+  "noise_floor": 0.002
+}

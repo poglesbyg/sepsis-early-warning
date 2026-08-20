@@ -1,0 +1,5 @@
+### What leakage is worth, measured
+
+Splitting ICU hours at random instead of splitting admissions inflates AUROC by **+0.0275** (0.821 to 0.848). It is not an exotic bug: it is what `train_test_split` does to a dataframe of rows, and it puts 17,236 of 17,285 admissions on both sides of the split at once. Filling gaps from the future with a single `bfill` inflates AUROC by **+0.0056**. Everything else is held fixed across the three rows: same hyperparameters, same boosting rounds, same seed, and for variant B the same admissions in train and test as the baseline.
+
+The more useful number is the one underneath. Clinical utility inflates by **+0.0796** and **+0.0478** for the two mistakes, roughly 3x and 9x the corresponding AUROC movement. Leakage does not merely make the ranking look better; it moves the whole risk distribution, so the threshold sweep finds an operating point that does not exist on honest data. A project reporting AUROC alone would see a fraction of the damage it is actually doing.

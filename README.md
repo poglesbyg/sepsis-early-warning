@@ -108,6 +108,34 @@ architecture — the GRU is unidirectional and the convolutions use
 `padding="causal"`. A bidirectional layer would score beautifully and be
 undeployable.
 
+### And here is what it is worth
+
+Rather than assert that leakage matters, the repo commits each mistake on purpose
+and measures the inflation. Two distinct errors, measured separately, everything
+else held fixed — same hyperparameters, same rounds, same seed:
+
+| variant | AUROC | ΔAUROC | Utility | ΔUtility |
+|---|---|---|---|---|
+| honest (admission split, causal features) | 0.8206 | — | 0.4148 | — |
+| **A: split ICU hours at random** | 0.8481 | **+0.0275** | 0.4944 | **+0.0796** |
+| **B: fill gaps from the future (one `bfill`)** | 0.8262 | **+0.0056** | 0.4626 | **+0.0478** |
+
+Mistake A is not exotic. It is what `train_test_split` does to a dataframe of
+rows, and it puts **17,236 of 17,285 admissions on both sides of the split at
+once.** Nearly three points of free AUROC, available to anyone who forgets that
+rows are not patients.
+
+**The second column is the more useful one.** Clinical utility inflates roughly
+**3x and 9x** more than AUROC does for the two mistakes. Leakage does not just
+flatter the ranking, it moves the whole risk distribution, so the threshold sweep
+locks onto an operating point that does not exist on honest data. A project
+reporting AUROC alone sees a fraction of the damage it is doing.
+
+Reproduce with `sepsis experiments`. The experiment refuses to publish if the
+leaky variant fails to beat the honest one, since that would mean the mistake was
+never actually committed and the table would be measuring nothing —
+[`tests/test_experiments.py`](tests/test_experiments.py) covers that path.
+
 ---
 
 ## Why this problem
@@ -264,6 +292,7 @@ sepsis features   345 causal features per ICU hour, cached per split
 sepsis explore    univariate screen · collinearity · cross-site drift
 sepsis train      clinical rule · logistic regression · XGBoost · causal GRU
 sepsis evaluate   calibrate · blend · score · REPORT.md
+sepsis experiments  measure what leakage is worth, and what each block buys
 make html         render the report as one self-contained HTML file
 ```
 
