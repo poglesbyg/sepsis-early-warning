@@ -4,9 +4,11 @@ Early sepsis prediction from ICU time series (PhysioNet/CinC Challenge 2019).
 
 ## Invariants — do not break these
 
-- **Features are causal.** Every feature at hour `t` depends only on hours `<= t`.
+- **No lookahead.** Every feature at hour `t` depends only on hours `<= t`.
   No `bfill`, no whole-stay statistics, no centred windows, no bidirectional layers.
-  `tests/test_features.py` enforces this by rebuilding on truncated stays.
+  `tests/test_features.py` enforces this by rebuilding on truncated stays and
+  requiring bit-identical rows. ("Causal" elsewhere in the codebase carries its
+  signal-processing sense: depending only on past inputs.)
 - **Splits are by admission, never by hour.** Rows within a stay are strongly
   autocorrelated. This applies to train/val/test, CV folds, and the bootstrap.
 - **Hospital B is external.** It is never used for fitting, tuning, calibration,

@@ -1,10 +1,16 @@
-"""Feature causality.
+"""No-lookahead guarantee.
 
 The property that matters for a real-time early-warning model is simple to state
 and easy to violate by accident: the feature vector at hour *t* must depend only
 on hours <= *t*. A single ``bfill``, a whole-stay median, or a centred rolling
 window breaks it, and the damage shows up as an optimistic offline score and a
 model that fails at the bedside.
+
+What this file establishes, stated precisely: the feature builder never reads a
+future row. That is a claim about implementation timing, not a causal claim about
+sepsis. "Causal" elsewhere in this codebase -- causal features, ``padding=
+"causal"`` -- carries its signal-processing sense of depending only on past
+inputs, which is the same property this file verifies.
 
 The test below truncates each admission at a range of cut points, rebuilds the
 features from scratch, and asserts the surviving rows are bit-identical to the
