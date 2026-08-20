@@ -138,6 +138,48 @@ never actually committed and the table would be measuring nothing —
 
 ---
 
+## The result I did not expect
+
+Ablating each of the seven feature blocks two ways — dropping it, and fitting on
+it alone — produced a pattern that took some sitting with:
+
+| block | what it is | n | drop it | on its own |
+|---|---|---|---|---|
+| recency | hours since each channel was measured | 34 | −0.0080 | 0.7599 |
+| clinical | SIRS, qSOFA, partial SOFA, shock index | 40 | −0.0034 | **0.7822** |
+| rolling | 6h and 24h level, spread, trend | 128 | −0.0031 | 0.7274 |
+| intensity | how often each channel is sampled | 68 | −0.0028 | 0.7764 |
+| locf | carried-forward channel values | 34 | −0.0020 | 0.7499 |
+| missing | panel-level ordering activity | 7 | −0.0009 | 0.7196 |
+| deviation | each channel vs the patient's running mean | 34 | −0.0006 | 0.7365 |
+
+**No block costs more than 0.008 AUROC to remove. Every block scores 0.72–0.78 on
+its own.** The matrix is enormously redundant: the same physiology is reachable
+through several different encodings, so nothing is load-bearing and everything
+works alone.
+
+Then the number that reframes the project:
+
+> Using **109 features containing no measured value whatsoever** — only which
+> channel was sampled, how recently, and how often — the model reaches
+> **AUROC 0.794, which is 97% of the 0.821 the full 345-feature matrix achieves.**
+
+Nothing about the patient's physiology is in that subset. It is a record of what
+the care team chose to look at.
+
+There are two honest readings and the repo reports both. The comfortable one:
+missingness is signal, and the recency and intensity blocks earn their place
+rather than padding the matrix. **The uncomfortable one: a model this dependent on
+ordering behaviour is substantially learning clinical suspicion rather than
+physiology** — it is partly predicting that somebody was already worried. That
+should degrade wherever ordering habits differ, and the drop from hospital A to
+hospital B is exactly what that would look like.
+
+I would want this on the table before anyone deployed it, which is why it is here
+rather than in a footnote.
+
+---
+
 ## Why this problem
 
 Sepsis kills roughly one in five people who develop it, and mortality rises about

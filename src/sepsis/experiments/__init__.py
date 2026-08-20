@@ -15,11 +15,12 @@ from __future__ import annotations
 from typing import Callable
 
 from .common import ExperimentResult, assert_partition, block_columns, fit_and_score
-from . import leakage
+from . import ablation, leakage
 
 # Explicit, ordered, greppable. Report sections appear in this order.
 REGISTRY: dict[str, Callable[..., ExperimentResult]] = {
     "leakage": leakage.run,
+    "ablation": ablation.run,
 }
 
 __all__ = [

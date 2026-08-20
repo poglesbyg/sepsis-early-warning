@@ -1,0 +1,20 @@
+{
+  "full_auroc": 0.8206006670668384,
+  "full_utility": 0.4147531762542077,
+  "n_features": 345,
+  "block_sizes": {
+    "locf": 34,
+    "recency": 34,
+    "intensity": 68,
+    "deviation": 34,
+    "rolling": 128,
+    "missing": 7,
+    "clinical": 40
+  },
+  "most_costly_to_drop": "recency",
+  "max_loo_cost": 0.007968898311909722,
+  "strongest_solo": "clinical",
+  "ordering_only_auroc": 0.7943432925925175,
+  "ordering_only_features": 109,
+  "ordering_only_share_of_full": 0.9680022506340684
+}

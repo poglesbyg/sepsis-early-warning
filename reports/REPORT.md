@@ -80,6 +80,24 @@ The more useful number is the one underneath. Clinical utility inflates by **+0.
 | A: split ICU hours at random              |  0.8481 |            0.0275 |    0.4944 |              0.0796 |         503347 |        167783 |
 | B: fill gaps from the future (bfill)      |  0.8262 |            0.0056 |    0.4626 |              0.0478 |         503767 |        167363 |
 
+### What each feature block buys
+
+With all 345 features the model scores AUROC 0.8206. **No single block costs more than 0.0080 AUROC to remove** — the most expensive is `recency` (hours since each channel was last measured). Yet every block scores between 0.720 and 0.782 on its own. That combination has one explanation: the matrix is enormously redundant, and the same physiology is reachable through several different encodings of it.
+
+The sharpest number here is the ordering-only row. Using **109 features that contain no measured value whatsoever** — only which channel was sampled, how recently, and how often — the model reaches AUROC **0.7943**, or 97% of what the full matrix achieves. Nothing about the patient's physiology is in that subset. It is a record of what the care team chose to look at, and it is nearly as predictive as the measurements themselves.
+
+Two readings follow. The optimistic one: missingness is signal, and the recency and intensity blocks earn their place rather than padding the matrix. The uncomfortable one: a model this dependent on ordering behaviour is partly learning clinical suspicion rather than physiology, so it would degrade wherever ordering habits differ — which is exactly what the drop from hospital A to hospital B looks like.
+
+| block     | what it is                                          |   n_features |   auroc_without |   loo_cost |   auroc_solo |   utility_without |   utility_loo_cost |
+|:----------|:----------------------------------------------------|-------------:|----------------:|-----------:|-------------:|------------------:|-------------------:|
+| recency   | hours since each channel was last measured          |           34 |          0.8126 |     0.0080 |       0.7599 |            0.4117 |             0.0031 |
+| clinical  | SIRS, qSOFA, partial SOFA, shock index              |           40 |          0.8172 |     0.0034 |       0.7822 |            0.4179 |            -0.0031 |
+| rolling   | 6h and 24h level, spread and trend                  |          128 |          0.8175 |     0.0031 |       0.7274 |            0.4194 |            -0.0047 |
+| intensity | how often each channel has been sampled             |           68 |          0.8178 |     0.0028 |       0.7764 |            0.4138 |             0.0010 |
+| locf      | carried-forward channel values                      |           34 |          0.8186 |     0.0020 |       0.7499 |            0.4204 |            -0.0057 |
+| missing   | panel-level ordering activity                       |            7 |          0.8197 |     0.0009 |       0.7196 |            0.4158 |            -0.0011 |
+| deviation | each channel against the patient's own running mean |           34 |          0.8200 |     0.0006 |       0.7365 |            0.4181 |            -0.0034 |
+
 ## Statistical analysis
 
 245 of 331 features separate septic from non-septic admissions at FDR < 0.05 (Benjamini-Hochberg over Welch tests). Tests are run on one summary value per admission, not per ICU hour: hours within a stay are strongly autocorrelated, and treating them as independent inflates significance by orders of magnitude.

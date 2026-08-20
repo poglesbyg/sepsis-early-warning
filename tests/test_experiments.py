@@ -8,6 +8,8 @@ make that outcome loud.
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -172,3 +174,54 @@ def test_registry_is_explicit_and_callable():
 
     assert "leakage" in REGISTRY
     assert all(callable(fn) for fn in REGISTRY.values())
+
+
+# --------------------------------------------------------------------------
+# Ablation guards
+# --------------------------------------------------------------------------
+def test_ordering_only_blocks_contain_no_measured_values():
+    """The headline ablation claim depends on this subset holding zero values.
+
+    If a channel value leaked into the ordering-only set, the "97% from no
+    measurements" result would be false and nothing else would catch it.
+    """
+    from sepsis.experiments.ablation import ORDERING_ONLY_BLOCKS
+
+    sample = _toy_stays(n_patients=4, n_hours=30)
+    membership = block_columns(sample)
+    ordering = [c for b in ORDERING_ONLY_BLOCKS for c in membership[b]]
+
+    assert ordering, "ordering-only subset must not be empty"
+    for col in ordering:
+        assert not col.endswith("_locf"), f"{col} is a measured value"
+        assert not col.endswith("_dev"), f"{col} is derived from measured values"
+        assert not re.search(r"_(mean|min|max|std|slope)\d+$", col), f"{col} summarises values"
+
+
+def test_ablation_rejects_block_sizes_that_do_not_sum_to_the_matrix():
+    from sepsis.experiments.ablation import _assert_blocks_are_real
+    from sepsis.features.builder import FEATURE_BLOCKS
+
+    table = pd.DataFrame({
+        "block": list(FEATURE_BLOCKS),
+        "n_features": [1] * len(FEATURE_BLOCKS),
+        "auroc_solo": [0.7] * len(FEATURE_BLOCKS),
+    })
+    membership = {b: ["x"] for b in FEATURE_BLOCKS}
+    with pytest.raises(ValueError, match="not measuring a partition"):
+        _assert_blocks_are_real(table, n_features=345, membership=membership)
+
+
+def test_ablation_rejects_a_block_scoring_below_chance():
+    from sepsis.experiments.ablation import _assert_blocks_are_real
+    from sepsis.features.builder import FEATURE_BLOCKS
+
+    n = len(FEATURE_BLOCKS)
+    table = pd.DataFrame({
+        "block": list(FEATURE_BLOCKS),
+        "n_features": [1] * n,
+        "auroc_solo": [0.7] * (n - 1) + [0.42],
+    })
+    membership = {b: ["x"] for b in FEATURE_BLOCKS}
+    with pytest.raises(ValueError, match="below chance"):
+        _assert_blocks_are_real(table, n_features=n, membership=membership)
