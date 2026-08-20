@@ -1,0 +1,337 @@
+{
+  "results": [
+    {
+      "auroc": 0.6478464468195878,
+      "auprc": 0.03705966314371072,
+      "utility": 0.13777008852463177,
+      "threshold": 0.02860992233317483,
+      "alert_rate": 0.24160893479447454,
+      "sensitivity": 0.44504643962848295,
+      "precision": 0.03996941470874461,
+      "brier": 0.021111181119642324,
+      "ece": 0.0037232518304863883,
+      "model": "clinical_rule",
+      "split": "test",
+      "auroc_ci_low": 0.6213066398492687,
+      "auroc_ci_high": 0.6698362136835726
+    },
+    {
+      "auroc": 0.7921262810616995,
+      "auprc": 0.08092628069132468,
+      "utility": 0.35944536350663625,
+      "threshold": 0.032532532532532535,
+      "alert_rate": 0.1616156526850569,
+      "sensitivity": 0.5499226006191951,
+      "precision": 0.0738335238491115,
+      "brier": 0.020587117521898214,
+      "ece": 0.002756461315989675,
+      "model": "logistic",
+      "split": "test",
+      "auroc_ci_low": 0.7693803742097496,
+      "auroc_ci_high": 0.8172109000890384
+    },
+    {
+      "auroc": 0.8134812579373548,
+      "auprc": 0.1391441031611211,
+      "utility": 0.393876520135881,
+      "threshold": 0.030849673202614378,
+      "alert_rate": 0.24411134903640258,
+      "sensitivity": 0.6861455108359134,
+      "precision": 0.060990712074303406,
+      "brier": 0.01982722870432672,
+      "ece": 0.002823928861406318,
+      "model": "xgboost",
+      "split": "test",
+      "auroc_ci_low": 0.7896176456231898,
+      "auroc_ci_high": 0.8342860903500953
+    },
+    {
+      "auroc": 0.7702476537027559,
+      "auprc": 0.06994006919240997,
+      "utility": 0.3122204402237743,
+      "threshold": 0.03326653306613227,
+      "alert_rate": 0.18267623966074653,
+      "sensitivity": 0.5328947368421053,
+      "precision": 0.06329870368667831,
+      "brier": 0.02073218681594031,
+      "ece": 0.004295066223407205,
+      "model": "gru",
+      "split": "test",
+      "auroc_ci_low": 0.7474354226595696,
+      "auroc_ci_high": 0.7941907319058548
+    },
+    {
+      "auroc": 0.8193483447291262,
+      "auprc": 0.10618804400015727,
+      "utility": 0.40961142611792345,
+      "threshold": 0.03199815837937386,
+      "alert_rate": 0.2235294117647059,
+      "sensitivity": 0.6741486068111455,
+      "precision": 0.06544197753484353,
+      "brier": 0.020215141196384248,
+      "ece": 0.0032597182814108634,
+      "model": "ensemble",
+      "split": "test",
+      "auroc_ci_low": 0.7974491996309804,
+      "auroc_ci_high": 0.8398323920106893
+    },
+    {
+      "auroc": 0.6595683976497344,
+      "auprc": 0.027419110242160406,
+      "utility": 0.01098200324983933,
+      "threshold": 0.02860992233317483,
+      "alert_rate": 0.17627018549990486,
+      "sensitivity": 0.3641929499072356,
+      "precision": 0.029229360393695513,
+      "brier": 0.013905789052260994,
+      "ece": 0.006212548717062926,
+      "model": "clinical_rule",
+      "split": "external",
+      "auroc_ci_low": NaN,
+      "auroc_ci_high": NaN
+    },
+    {
+      "auroc": 0.7310821269172884,
+      "auprc": 0.0570322533512161,
+      "utility": 0.25663733635833963,
+      "threshold": 0.032532532532532535,
+      "alert_rate": 0.1043956981345022,
+      "sensitivity": 0.44647495361781075,
+      "precision": 0.06050358898289105,
+      "brier": 0.019120243038394595,
+      "ece": 0.011499773926357674,
+      "model": "logistic",
+      "split": "external",
+      "auroc_ci_low": NaN,
+      "auroc_ci_high": NaN
+    },
+    {
+      "auroc": 0.8013380700506985,
+      "auprc": 0.06927041349613546,
+      "utility": 0.3274525554158861,
+      "threshold": 0.030849673202614378,
+      "alert_rate": 0.1056791711231701,
+      "sensitivity": 0.5196660482374769,
+      "precision": 0.0695667291715822,
+      "brier": 0.013543618748572578,
+      "ece": 0.0028331999185705736,
+      "model": "xgboost",
+      "split": "external",
+      "auroc_ci_low": NaN,
+      "auroc_ci_high": NaN
+    },
+    {
+      "auroc": 0.7158480311987344,
+      "auprc": 0.0280041341409749,
+      "utility": 0.05299414415795408,
+      "threshold": 0.03326653306613227,
+      "alert_rate": 0.25191372646802146,
+      "sensitivity": 0.5512059369202227,
+      "precision": 0.03095484926311622,
+      "brier": 0.015280551503235958,
+      "ece": 0.016781267217344846,
+      "model": "gru",
+      "split": "external",
+      "auroc_ci_low": NaN,
+      "auroc_ci_high": NaN
+    },
+    {
+      "auroc": 0.8015351296021039,
+      "auprc": 0.06569249000129766,
+      "utility": 0.2572750406229861,
+      "threshold": 0.03199815837937386,
+      "alert_rate": 0.19497503264457117,
+      "sensitivity": 0.6343228200371057,
+      "precision": 0.046025442552332235,
+      "brier": 0.013610469826234631,
+      "ece": 0.005237800744111409,
+      "model": "ensemble",
+      "split": "external",
+      "auroc_ci_low": NaN,
+      "auroc_ci_high": NaN
+    }
+  ],
+  "weights": {
+    "logistic": 0.25559863699350044,
+    "xgboost": 0.6021837607714282,
+    "gru": 0.1422176022350713
+  },
+  "thresholds": {
+    "clinical_rule": 0.02860992233317483,
+    "logistic": 0.032532532532532535,
+    "xgboost": 0.030849673202614378,
+    "gru": 0.03326653306613227,
+    "ensemble": 0.03199815837937386
+  },
+  "calibration": [
+    {
+      "model": "clinical_rule",
+      "brier_raw": 0.0994933471083641,
+      "brier_calibrated": 0.021111181119642324,
+      "ece_raw": 0.20625592821160016,
+      "ece_calibrated": 0.0037232518304863883,
+      "auroc_raw": 0.6460867288692801,
+      "auroc_calibrated": 0.6478464468195878
+    },
+    {
+      "model": "logistic",
+      "brier_raw": 0.17865589261054993,
+      "brier_calibrated": 0.020587117521898214,
+      "ece_raw": 0.33300241065203884,
+      "ece_calibrated": 0.002756461315989675,
+      "auroc_raw": 0.7929408876039624,
+      "auroc_calibrated": 0.7921262810616995
+    },
+    {
+      "model": "xgboost",
+      "brier_raw": 0.17322015762329102,
+      "brier_calibrated": 0.01982722870432672,
+      "ece_raw": 0.3630604280784608,
+      "ece_calibrated": 0.002823928861406318,
+      "auroc_raw": 0.813905557368686,
+      "auroc_calibrated": 0.8134812579373548
+    },
+    {
+      "model": "gru",
+      "brier_raw": 0.05633128434419632,
+      "brier_calibrated": 0.02073218681594031,
+      "ece_raw": 0.09198679798935219,
+      "ece_calibrated": 0.004295066223407205,
+      "auroc_raw": 0.7708909616051077,
+      "auroc_calibrated": 0.7702476537027559
+    }
+  ],
+  "delong": [
+    {
+      "auc_a": 0.8193483447291261,
+      "auc_b": 0.8134812579373546,
+      "diff": 0.005867086791771503,
+      "z": 4.998767398270981,
+      "p_value": 5.769795260691734e-07,
+      "champion": "ensemble",
+      "challenger": "xgboost"
+    },
+    {
+      "auc_a": 0.8193483447291261,
+      "auc_b": 0.7921262810616994,
+      "diff": 0.027222063667426744,
+      "z": 11.995684975059286,
+      "p_value": 3.743077206812895e-33,
+      "champion": "ensemble",
+      "challenger": "logistic"
+    },
+    {
+      "auc_a": 0.8193483447291261,
+      "auc_b": 0.7702476537027559,
+      "diff": 0.04910069102637016,
+      "z": 16.106630190293206,
+      "p_value": 2.2917752971000766e-58,
+      "champion": "ensemble",
+      "challenger": "gru"
+    },
+    {
+      "auc_a": 0.8193483447291261,
+      "auc_b": 0.6478464468195877,
+      "diff": 0.1715018979095384,
+      "z": 29.87483702476312,
+      "p_value": 4.1779026890232795e-196,
+      "champion": "ensemble",
+      "challenger": "clinical_rule"
+    }
+  ],
+  "lead_time": [
+    {
+      "model": "clinical_rule",
+      "septic_admissions": 269.0,
+      "control_admissions": 2782.0,
+      "detected_before_onset": 223.0,
+      "detection_rate": 0.828996282527881,
+      "median_lead_time_h": 36.0,
+      "iqr_lead_time_h": 62.0,
+      "detected_within_48h": 130.0,
+      "control_admissions_with_any_alert": 2119.0,
+      "false_alarm_rate_per_admission": 0.7616822429906542,
+      "alert_hours_per_control_admission": 8.18332135154565,
+      "false_alarms_per_true_detection": 9.502242152466367
+    },
+    {
+      "model": "logistic",
+      "septic_admissions": 269.0,
+      "control_admissions": 2782.0,
+      "detected_before_onset": 208.0,
+      "detection_rate": 0.7732342007434945,
+      "median_lead_time_h": 36.0,
+      "iqr_lead_time_h": 57.0,
+      "detected_within_48h": 121.0,
+      "control_admissions_with_any_alert": 969.0,
+      "false_alarm_rate_per_admission": 0.34831056793673615,
+      "alert_hours_per_control_admission": 3.8698777857656363,
+      "false_alarms_per_true_detection": 4.658653846153846
+    },
+    {
+      "model": "xgboost",
+      "septic_admissions": 269.0,
+      "control_admissions": 2782.0,
+      "detected_before_onset": 218.0,
+      "detection_rate": 0.8104089219330854,
+      "median_lead_time_h": 38.0,
+      "iqr_lead_time_h": 62.75,
+      "detected_within_48h": 124.0,
+      "control_admissions_with_any_alert": 1181.0,
+      "false_alarm_rate_per_admission": 0.4245147375988497,
+      "alert_hours_per_control_admission": 6.441049604601006,
+      "false_alarms_per_true_detection": 5.41743119266055
+    },
+    {
+      "model": "gru",
+      "septic_admissions": 269.0,
+      "control_admissions": 2782.0,
+      "detected_before_onset": 215.0,
+      "detection_rate": 0.7992565055762082,
+      "median_lead_time_h": 35.0,
+      "iqr_lead_time_h": 58.5,
+      "detected_within_48h": 129.0,
+      "control_admissions_with_any_alert": 1185.0,
+      "false_alarm_rate_per_admission": 0.42595255212077643,
+      "alert_hours_per_control_admission": 4.795470884255931,
+      "false_alarms_per_true_detection": 5.511627906976744
+    },
+    {
+      "model": "ensemble",
+      "septic_admissions": 269.0,
+      "control_admissions": 2782.0,
+      "detected_before_onset": 225.0,
+      "detection_rate": 0.8364312267657993,
+      "median_lead_time_h": 33.0,
+      "iqr_lead_time_h": 61.0,
+      "detected_within_48h": 131.0,
+      "control_admissions_with_any_alert": 1071.0,
+      "false_alarm_rate_per_admission": 0.38497483824586626,
+      "alert_hours_per_control_admission": 5.692667145938174,
+      "false_alarms_per_true_detection": 4.76
+    }
+  ],
+  "contributions": [
+    {
+      "model": "xgboost",
+      "weight": 0.6021837607714282,
+      "utility_alone": 0.40173963133640556,
+      "utility_without": 0.4055619559651818,
+      "marginal_contribution": 0.02322964669738864
+    },
+    {
+      "model": "logistic",
+      "weight": 0.25559863699350044,
+      "utility_alone": 0.3816961085509473,
+      "utility_without": 0.41287890424987206,
+      "marginal_contribution": 0.01591269841269838
+    },
+    {
+      "model": "gru",
+      "weight": 0.1422176022350713,
+      "utility_alone": 0.36432539682539694,
+      "utility_without": 0.4234741423451101,
+      "marginal_contribution": 0.005317460317460332
+    }
+  ]
+}

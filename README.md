@@ -1,0 +1,293 @@
+# Early Sepsis Prediction from ICU Time Series
+
+Predicting sepsis onset **six or more hours before clinical recognition**, from
+hourly vitals and labs, on the PhysioNet/CinC Challenge 2019 cohort — 40,336 ICU
+admissions across two independent health systems.
+
+The data is real, public, and downloaded automatically. The second hospital is
+never touched until the final evaluation, so the external numbers in this repo
+are external in the sense that matters.
+
+```bash
+make setup && make all
+```
+
+---
+
+## Why this problem
+
+Sepsis kills roughly one in five people who develop it, and mortality rises about
+**8% for every hour** antibiotics are delayed. An alert that fires at the moment
+a clinician already suspects sepsis is worthless. The whole value is in the lead
+time, which is why this task is scored on a **time-dependent, asymmetric utility
+function** rather than accuracy: a false alarm costs 0.05, a missed septic hour
+costs up to 2.0, and a correct alert is worth the most exactly six hours before
+onset and decays either side of that.
+
+That single fact reshapes everything downstream — the tuning objective, the
+threshold, the calibration step, and how the results are reported.
+
+It is also a genuinely hard problem, not a benchmark with headroom left in it:
+
+| | |
+|---|---|
+| Admissions | 40,336 (20,336 hospital A · 20,000 hospital B) |
+| ICU hours | 1,552,210 |
+| Positive hours | 1.8% |
+| Septic admissions | 8.8% (A) · 5.7% (B) |
+| Missing lab values | ~90% |
+| Channels | 34 physiological + 6 static, hourly |
+
+---
+
+## What this repository demonstrates
+
+| Skill | Where to look |
+|---|---|
+| **XGBoost** | [`models/xgb.py`](src/sepsis/models/xgb.py) — native missing-value handling, Optuna search **against clinical utility**, grouped CV with in-fold early stopping, gain-vs-SHAP attribution |
+| **Logistic regression** | [`models/logistic.py`](src/sepsis/models/logistic.py) — elastic-net variable selection, and a separate unpenalised MLE on a decorrelated matrix for odds ratios with CIs that actually mean something |
+| **Scikit-Learn** | Pipelines with fold-safe preprocessing, `StratifiedGroupKFold`, isotonic/Platt calibration, custom transformers |
+| **TensorFlow** | [`models/deep.py`](src/sepsis/models/deep.py) — causal Conv1D → stacked GRU over variable-length stays, per-hour outputs, length-bucketed padded batches, masked weighted loss |
+| **Model development & optimisation** | Optuna TPE with median pruning; a vectorised utility scorer that made the search tractable in the first place |
+| **Feature engineering** | [`features/`](src/sepsis/features) — 345 causal features: carried-forward values, measurement recency and ordering intensity, personal-baseline deviation, rolling level/spread/trend, SIRS · qSOFA · partial SOFA · shock index |
+| **Statistical analysis** | [`stats/`](src/sepsis/stats) — admission-level Welch and Mann-Whitney tests with Benjamini-Hochberg FDR, Hedges' *g*, VIF and condition number, PSI cross-site drift, DeLong test, patient-level cluster bootstrap |
+| **Predictive modelling** | Frozen thresholds, calibrated probabilities, blend weights chosen on validation only, external validation on an unseen health system, lead-time analysis |
+
+---
+
+## Results
+
+Hyperparameters, calibration maps, blend weights and decision thresholds were all
+chosen on the validation split. Hospital A's test split was scored once. Hospital
+B — a different health system, 20,000 admissions — was untouched until this table.
+
+**Hospital A, held-out test**
+
+| model | AUROC (95% CI) | AUPRC | Utility | Sensitivity | Alert rate |
+|---|---|---|---|---|---|
+| qSOFA/SIRS rule | 0.648 (0.621–0.670) | 0.037 | 0.138 | 0.445 | 24.2% |
+| Logistic regression | 0.792 (0.769–0.817) | 0.081 | 0.359 | 0.550 | 16.2% |
+| XGBoost | 0.814 (0.790–0.834) | **0.139** | 0.394 | 0.686 | 24.4% |
+| Causal GRU | 0.770 (0.747–0.794) | 0.070 | 0.312 | 0.533 | 18.3% |
+| **Ensemble** | **0.819 (0.797–0.840)** | 0.106 | **0.410** | 0.674 | 22.4% |
+
+**Hospital B, external validation**
+
+| model | AUROC | AUPRC | Utility | Sensitivity | Alert rate |
+|---|---|---|---|---|---|
+| qSOFA/SIRS rule | 0.660 | 0.027 | 0.011 | 0.364 | 17.6% |
+| Logistic regression | 0.731 | 0.057 | 0.257 | 0.447 | 10.4% |
+| **XGBoost** | 0.801 | **0.069** | **0.328** | 0.520 | 10.6% |
+| Causal GRU | 0.716 | 0.028 | 0.053 | 0.551 | 25.2% |
+| Ensemble | **0.802** | 0.066 | 0.257 | 0.634 | 19.5% |
+
+CIs are patient-level cluster bootstrap (300 resamples of whole admissions).
+Utility is the official normalised challenge score: 1.0 is the best achievable
+alerting policy, 0.0 is never alerting.
+
+**At the bedside**, at the utility-optimal threshold:
+
+| model | Caught before onset | Median warning | False-alarm admissions per true detection |
+|---|---|---|---|
+| qSOFA/SIRS rule | 82.9% | 36 h | 9.50 |
+| Logistic regression | 77.3% | 36 h | 4.66 |
+| XGBoost | 81.0% | 38 h | 5.42 |
+| Ensemble | 83.6% | 33 h | 4.76 |
+
+An admission counts as *caught* only if the first alert lands **before** clinical
+onset. The bedside table is the reason the clinical rule's 82.9% is not a good
+result: it buys that recall with twice the false-alarm burden.
+
+### Three findings worth stating plainly
+
+**The ensemble's edge over XGBoost alone is real but tiny.** DeLong on the paired
+test predictions: ΔAUROC = +0.0059, *p* = 6×10⁻⁷. Statistically unambiguous,
+clinically irrelevant — and it costs three models in production instead of one.
+The leave-one-out ablation says the GRU contributes +0.005 utility for a third
+of the inference budget. On this evidence I would ship the booster alone.
+
+**The search bought less than it looked like.** Best 3-fold CV utility across 60
+Optuna trials was 0.448; the same configuration scores 0.394 on the test split.
+That +0.054 gap is selection optimism — the maximum over 60 draws of a noisy,
+piecewise-constant objective selects partly for luck. It is in the report because
+0.448 is the number that would have been quoted if nobody had held a test set
+back.
+
+**Deep learning lost, and that is the honest result.** The causal GRU sees raw
+trajectories and learns its own temporal representation; it still lands below a
+logistic regression on hand-engineered features, and it degrades hardest across
+sites (utility 0.312 → 0.053). On 14,000 training admissions with 1.8% positive
+hours, the engineered features are worth more than the extra capacity.
+
+---
+
+## The four things that are easy to get wrong here
+
+Most of the engineering in this repo is aimed at these. Each one is enforced by a
+test, not just a comment.
+
+### 1. Temporal leakage
+
+A feature at hour *t* must depend only on hours ≤ *t*. One `bfill`, one
+whole-stay median, one centred rolling window, and the offline score climbs while
+the bedside model fails.
+
+[`tests/test_features.py`](tests/test_features.py) truncates every admission at a
+range of cut points, rebuilds all 345 features from scratch, and asserts the
+surviving rows are **bit-identical** to the same rows built from the full stay —
+NaN patterns included.
+
+The same constraint drives the network architecture: the GRU is unidirectional
+and the convolutions use `padding="causal"`. A bidirectional layer would score
+beautifully and be undeployable.
+
+### 2. Splitting rows instead of patients
+
+An ICU stay contributes ~40 strongly autocorrelated hours. Split rows at random
+and hour 12 of a patient trains a model that is then tested on hour 13.
+
+Every split here is at the admission level, cross-validation uses
+`StratifiedGroupKFold` on `patient_id`, and the bootstrap resamples whole
+admissions rather than hours — an hour-level bootstrap would report confidence
+intervals several times too narrow.
+
+### 3. Pseudo-replication in the statistics
+
+790,000 hours are not 790,000 independent observations. Testing them as if they
+were produces p-values with far too many zeros to mean anything.
+
+The univariate screen collapses each admission to one summary value first, so
+*n* is the number of patients. With 345 features, Benjamini-Hochberg then
+controls the false discovery rate — and effect sizes are reported next to
+significance, because at *n* = 20,000 almost everything is significant and the
+size of the separation is the only interesting part.
+
+### 4. Confusing a good ranking with a good probability
+
+`scale_pos_weight` and `class_weight="balanced"` are the right answers to a 1.8%
+positive rate, and both destroy the probability scale as a side effect.
+
+Isotonic recalibration is fitted on validation and frozen. It leaves
+discrimination essentially untouched — a monotone map preserves ordering, and
+isotonic perturbs AUROC only through the ties it introduces — while moving Brier
+score and calibration error a long way. That is what makes a threshold
+interpretable and the expected-cost analysis arithmetic rather than numerology.
+
+---
+
+## One optimisation worth calling out
+
+The official utility scorer loops over hours in Python. That is fine for scoring
+one submission and far too slow to sit inside a 60-trial hyperparameter search
+with a 200-point threshold sweep in every fold.
+
+For a fixed patient, utility is **linear in the binary prediction vector**:
+
+```
+u(t) = pred[t] · u_pos[t] + (1 − pred[t]) · u_neg[t]
+```
+
+so the cohort total is `u_neg.sum() + pred @ (u_pos − u_neg)`. Precomputing the
+two per-hour weight vectors once turns scoring into a single dot product, and the
+normalising constants fall out of the same arrays:
+
+```
+normalised utility  =  (pred · Δ) / Σ max(Δ, 0)        where  Δ = u_pos − u_neg
+```
+
+A 200-threshold sweep over 119,000 hours becomes one matrix multiply — about
+**4 ms**. [`tests/test_utility.py`](tests/test_utility.py) asserts exact
+agreement with the published definition; the implementation also reproduces the
+official PhysioNet scorer to 3×10⁻¹⁶.
+
+This is what made tuning on the metric that matters affordable instead of
+tuning on AUROC and hoping.
+
+---
+
+## Pipeline
+
+```
+sepsis data       40,336 .psv files from the PhysioNet S3 mirror → Parquet
+sepsis features   345 causal features per ICU hour, cached per split
+sepsis explore    univariate screen · collinearity · cross-site drift
+sepsis train      clinical rule · logistic regression · XGBoost · causal GRU
+sepsis evaluate   calibrate · blend · score · REPORT.md
+make html         render the report as one self-contained HTML file
+```
+
+Each stage caches to disk and runs independently, so changing the write-up does
+not mean retraining and changing the search space does not mean re-downloading.
+
+**The split contract, applied everywhere:** hyperparameters, calibration maps,
+blend weights and decision thresholds are all chosen on the validation split;
+hospital A's test split is scored once; hospital B is never seen until the final
+table.
+
+---
+
+## Repository layout
+
+```
+src/sepsis/
+├── config.py              paths, channel groups, utility parameters, windows
+├── pipeline.py            stage orchestration
+├── report.py              REPORT.md generation
+├── cli.py                 command-line entry point
+├── data/
+│   ├── download.py        resumable parallel fetch → per-hospital Parquet
+│   └── loader.py          admission-level splits
+├── features/
+│   ├── temporal.py        LOCF · recency · intensity · baseline deviation · rolling
+│   ├── clinical.py        SIRS · qSOFA · partial SOFA · haemodynamics · metabolic
+│   └── builder.py         assembly, one pure function of the raw frame
+├── stats/
+│   ├── univariate.py      Welch · Mann-Whitney · BH-FDR · Hedges' g
+│   ├── multicollinearity.py  VIF · greedy decorrelation · condition number
+│   └── drift.py           PSI · KS between hospitals
+├── models/
+│   ├── logistic.py        elastic net + unpenalised inference + clinical rule
+│   ├── xgb.py             Optuna search on utility · SHAP
+│   ├── deep.py            causal Conv1D→GRU · tabular MLP
+│   ├── calibration.py     isotonic/Platt · reliability · expected-cost thresholds
+│   └── ensemble.py        rank-space blending · leave-one-out ablation
+└── evaluate/
+    ├── metrics.py         vectorised utility · DeLong · cluster bootstrap
+    ├── lead_time.py       per-admission alert timing
+    └── plots.py           report figures
+```
+
+---
+
+## Reproducing
+
+```bash
+make setup      # uv venv on Python 3.12 + install
+make all        # ~35 min end to end on a laptop CPU (22 of it Optuna)
+make test       # 48 tests, ~3 s
+```
+
+The download is ~310 MB across 40,336 small files, fetched 32-way in parallel
+with atomic writes, and is resumable — an interrupted run picks up where it
+stopped. Everything after it is cached, so `make all` is cheap to re-run.
+
+For a fast end-to-end check with a small search budget:
+
+```bash
+make quick
+```
+
+---
+
+## Data and licence
+
+Reyna et al., *Early Prediction of Sepsis from Clinical Data: the
+PhysioNet/Computing in Cardiology Challenge 2019*, Critical Care Medicine 48(2),
+2020. Data is distributed by PhysioNet under the Open Data Commons ODbL v1.0 and
+is downloaded at run time from the public AWS mirror; nothing is vendored into
+this repository.
+
+The labels mark **clinical suspicion of sepsis** (Sepsis-3, shifted six hours
+earlier), not a biological ground truth. A model trained on them learns to
+anticipate when a care team will start acting — which is the useful target for an
+early-warning tool, and a limitation worth being explicit about.

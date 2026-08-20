@@ -1,0 +1,13 @@
+# Anchored to the repo root: an unanchored `data/` also matches src/sepsis/data/.
+/data/
+/artifacts/
+
+# Regenerable from REPORT.md + figures via `make html`; 700 KB of inlined base64
+# that would rewrite itself on every run.
+/reports/report.html
+
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.DS_Store
