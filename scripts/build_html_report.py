@@ -928,9 +928,13 @@ def replay_widget() -> str:
         return ""
 
     payload = json.loads(path.read_text())
+    # The selected attribute is built outside the f-string: a backslash inside an
+    # f-string expression is a syntax error before Python 3.12, and nothing else in
+    # this script needs a version newer than the one CI happens to run.
+    current = ' aria-current="true"'
     tabs = "".join(
         f'<button type="button" class="case" data-case="{n}"'
-        f'{" aria-current=\'true\'" if n == 0 else ""}>'
+        f'{current if n == 0 else ""}>'
         f'<span class="case-role">{html.escape(CASE_LABELS.get(c["role"], c["role"]))}</span>'
         f'<span class="case-id">{html.escape(c["patient_id"])}</span></button>'
         for n, c in enumerate(payload["cases"])

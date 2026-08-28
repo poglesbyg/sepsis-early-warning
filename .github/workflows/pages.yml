@@ -1,0 +1,76 @@
+# Publish the rendered report to GitHub Pages.
+#
+# The report is 774 KB of inlined base64 that rewrites itself on every pipeline run,
+# so reports/report.html is gitignored and never tracked. It does not need to be:
+# scripts/build_html_report.py reads only committed inputs -- REPORT.md, the figures
+# and the replay payload -- and is pure standard library, so this workflow rebuilds
+# the page in seconds without the 310 MB dataset, the models, or one dependency.
+
+name: report
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never cancel a deploy midway; a half-published report is worse than a stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # `make clean` removes these, so a clean-then-push would otherwise publish a
+      # page with silently missing figures. The builder skips an image it cannot
+      # find rather than failing, which is right for a local run and wrong here.
+      - name: Check the committed inputs are present
+        run: |
+          missing=0
+          for f in reports/REPORT.md reports/replay.json reports/metrics.json; do
+            [ -f "$f" ] || { echo "::error::$f is missing; the report cannot be built"; missing=1; }
+          done
+          figures=$(ls reports/figures/*.png 2>/dev/null | wc -l)
+          if [ "$figures" -lt 1 ]; then
+            echo "::error::no figures in reports/figures/; the page would publish without them"
+            missing=1
+          fi
+          [ "$missing" = "0" ] || exit 1
+          echo "inputs present: $figures figures"
+
+      - name: Build the report
+        run: python scripts/build_html_report.py
+
+      - name: Stage the site
+        run: |
+          mkdir -p site
+          cp reports/report.html site/index.html
+          echo "published $(du -h site/index.html | cut -f1)"
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
