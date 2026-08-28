@@ -5,6 +5,7 @@
     sepsis explore              univariate screen, collinearity, cross-site drift
     sepsis train                fit baseline, logistic, XGBoost and GRU
     sepsis evaluate             calibrate, blend, score, write REPORT.md
+    sepsis replay               pick and pre-compute the admissions the report replays
     sepsis experiments          run the registered ablations and shift experiments
     sepsis regress              check published numbers against the committed baseline
     sepsis all                  everything, in order
@@ -48,6 +49,8 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("evaluate", help="calibrate, blend and report")
 
+    sub.add_parser("replay", help="pre-compute the report's admission replay")
+
     p_exp = sub.add_parser("experiments", help="run the registered experiments")
     p_exp.add_argument("--only", nargs="*", default=[], help="run only these experiments")
 
@@ -88,6 +91,9 @@ def main(argv: list[str] | None = None) -> int:
         pipeline.stage_train(frames, pipeline.stage_explore(frames, cfg), cfg, skip=tuple(args.skip))
     elif args.command == "evaluate":
         pipeline.stage_evaluate(cfg)
+        write_report(cfg)
+    elif args.command == "replay":
+        pipeline.stage_replay(cfg)
         write_report(cfg)
     elif args.command == "experiments":
         pipeline.stage_experiments(cfg, only=tuple(args.only))

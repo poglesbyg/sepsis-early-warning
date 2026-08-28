@@ -3,8 +3,9 @@
 Why this pipeline is built the way it is. Each entry states the choice, the
 alternative that was rejected, and what it would have cost to get it wrong.
 
-Entries marked **PLANNED** describe work that is specified but not yet built. They
-are here because the specification has to exist before the code, not after.
+Several entries were written before the code they describe, because a shift
+experiment without a stated estimand produces a number nobody can interpret. They
+are kept in the order they were decided rather than rewritten to look inevitable.
 
 ---
 
@@ -357,13 +358,36 @@ operating point, not the model. Paired with the hospital result, which fails the
 other way round, that is the argument against reporting one external number and
 calling it generalisation.
 
-### PLANNED — illustrative cases come from validation
+### Illustrative cases come from validation, and the headline case is the median
 
-The replay demo and the failure gallery both display individual admissions. Those
-are selected from the **validation** split, which was already spent on tuning and
-threshold selection.
+The replay displays individual admissions. They are selected from the
+**validation** split, which was already spent on tuning, calibration and
+threshold selection, so nothing is lost by looking at it again.
 
-Selecting them from test would convert a held-out set into a presentation set. The
-reported metrics would remain arithmetically correct, but a human would have
-inspected test cases to decide what to show, and the split would no longer be
-untouched in the sense the rest of this document claims.
+Selecting them from test would convert a held-out set into a presentation set.
+The reported metrics would stay arithmetically correct, but a human would have
+inspected test admissions to decide what to show, and the split would no longer be
+untouched in the sense the rest of this document claims. The check runs against
+the split files themselves rather than trusting the filename the payload came
+from.
+
+**The case shown first is the one whose lead time is closest to the cohort
+median**, not the largest. Picking the best trace in 225 caught admissions would
+have been one line of code, would have looked considerably better, and would have
+described nothing. The other three are a marginal catch, a septic admission the
+model alerted on only after the care team was already acting, and a control that
+sat above the threshold for 56 of its 58 hours. Two of the four cases are
+failures because a demo that only shows the model working is an advertisement.
+
+**Rejected:** hand-picking. Every case is a deterministic argmin or argmax with an
+explicit tie-break, so the selection is reproducible and none of it is a judgement
+about which trace looks best. Each case is then asserted against the role it is
+published under: a case captioned as caught must have alerted before onset, and a
+case captioned as a false alarm must not have been septic. A caption that
+contradicts its own chart is the failure that matters here, because the chart is
+what a reader believes.
+
+**The probabilities on screen are in-sample.** The isotonic map was fitted on
+validation, which is where these admissions come from, so the replay is evidence
+about timing rather than about calibration quality, and the report says so where
+it is displayed rather than in a footnote.

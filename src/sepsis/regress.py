@@ -49,7 +49,7 @@ def published_files(cfg: Config = CFG) -> list[Path]:
     """Every JSON artifact the report and README quote from, in a stable order."""
     from .experiments import REGISTRY
 
-    candidates = [cfg.reports_dir / "metrics.json"]
+    candidates = [cfg.reports_dir / "metrics.json", cfg.reports_dir / "replay_summary.json"]
     candidates += [cfg.reports_dir / f"experiment_{name}.json" for name in REGISTRY]
     return [p for p in candidates if p.exists()]
 

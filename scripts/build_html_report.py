@@ -103,6 +103,12 @@ def to_html(md: str) -> tuple[str, str]:
             i += 1
             continue
 
+        if stripped == "<!-- replay -->":
+            flush()
+            parts.append(replay_widget())
+            i += 1
+            continue
+
         if stripped.startswith("|"):
             flush()
             block = []
@@ -478,6 +484,479 @@ TRACE = """
 """
 
 
+# --------------------------------------------------------------------------
+# Replay
+# --------------------------------------------------------------------------
+CASE_LABELS = {
+    "median_catch": "Median catch",
+    "near_miss": "Only just",
+    "missed": "Missed",
+    "false_alarm": "False alarm",
+}
+
+
+REPLAY_CSS = """
+.replay {
+  margin: 2.4rem 0;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.replay .case-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border-bottom: 1px solid var(--rule);
+  background: var(--signal-dim);
+}
+.replay .case {
+  flex: 1 1 9rem;
+  display: flex;
+  flex-direction: column;
+  gap: .1rem;
+  padding: .6rem .8rem;
+  border: 0;
+  border-right: 1px solid var(--rule);
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.replay .case:last-child { border-right: 0; }
+.replay .case:hover { color: var(--ink); }
+.replay .case[aria-current="true"] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--signal);
+}
+.replay .case-role { font-size: .82rem; font-weight: 600; letter-spacing: .01em; }
+.replay .case-id {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: .7rem;
+  color: var(--ink-faint);
+}
+.replay-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: .4rem 1.2rem;
+  padding: .85rem 1rem .2rem;
+}
+.replay-head p { margin: 0; }
+.replay .who { font-size: .84rem; color: var(--ink-soft); }
+.replay .verdict { font-size: .84rem; font-weight: 600; color: var(--ink); }
+.replay .verdict.fired { color: var(--flag); }
+.replay .verdict.quiet { color: var(--stable); }
+.replay svg.risk { display: block; width: 100%; height: auto; padding: 0 .4rem; }
+.replay .vitals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: .2rem 1rem;
+  padding: 0 1rem .4rem;
+}
+.replay .vital { min-width: 0; }
+.replay .vital-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: .72rem;
+  color: var(--ink-faint);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.replay .vital-head b {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: .82rem;
+  color: var(--ink);
+  font-weight: 500;
+  text-transform: none;
+}
+.replay .vital svg { display: block; width: 100%; height: auto; }
+.replay .transport {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .5rem 1rem .9rem;
+}
+.replay .play {
+  min-width: 4.4rem;
+  padding: .35rem .8rem;
+  border: 1px solid var(--signal);
+  border-radius: 999px;
+  background: var(--signal);
+  color: #fff;
+  font: inherit;
+  font-size: .82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.replay .play:hover { filter: brightness(1.08); }
+.replay .transport input[type="range"] { flex: 1; accent-color: var(--signal); min-width: 0; }
+.replay .clock {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: .78rem;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.replay .replay-foot {
+  margin: 0;
+  padding: 0 1rem 1rem;
+  font-size: .74rem;
+  color: var(--ink-faint);
+}
+.replay text { font-family: "IBM Plex Sans", system-ui, sans-serif; }
+@media (max-width: 620px) {
+  .replay .case { flex-basis: 50%; }
+  .replay .clock { font-size: .7rem; }
+}
+"""
+
+
+REPLAY_JS = """
+(function () {
+  var node = document.getElementById('replay-data');
+  if (!node) return;
+  var data = JSON.parse(node.textContent);
+  var cases = data.cases;
+  var threshold = data.threshold;
+  var NS = 'http://www.w3.org/2000/svg';
+
+  var riskSvg = document.getElementById('replay-risk');
+  var vitalsBox = document.getElementById('replay-vitals');
+  var scrub = document.getElementById('replay-scrub');
+  var clock = document.getElementById('replay-clock');
+  var playBtn = document.getElementById('replay-play');
+  var whoLine = document.getElementById('replay-who');
+  var verdict = document.getElementById('replay-verdict');
+
+  var W = 960, H = 300, L = 58, R = 18, T = 20, B = 40;
+  var active = 0, cursor = 0, timer = null;
+
+  function el(name, attrs, text) {
+    var n = document.createElementNS(NS, name);
+    for (var k in attrs) n.setAttribute(k, attrs[k]);
+    if (text !== undefined) n.textContent = text;
+    return n;
+  }
+  function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
+
+  function scales(c) {
+    var hours = c.hours;
+    var h0 = hours[0], h1 = hours[hours.length - 1];
+    var top = Math.max(Math.max.apply(null, c.risk), threshold * 1.6) * 1.12;
+    return {
+      x: function (h) { return L + (h1 === h0 ? 0 : (h - h0) / (h1 - h0)) * (W - L - R); },
+      y: function (v) { return T + (1 - v / top) * (H - T - B); },
+      top: top, h0: h0, h1: h1
+    };
+  }
+
+  function path(pts) {
+    return pts.map(function (p, i) { return (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1); }).join(' ');
+  }
+
+  function drawRisk(c) {
+    clear(riskSvg);
+    var s = scales(c);
+    var g = el('g', {});
+
+    // Axes and gridlines.
+    [0, threshold, s.top].forEach(function (v) {
+      var y = s.y(v);
+      g.appendChild(el('line', {
+        x1: L, x2: W - R, y1: y, y2: y,
+        stroke: 'currentColor', 'stroke-width': v === threshold ? 1.2 : 1,
+        'stroke-dasharray': v === threshold ? '5 4' : '',
+        opacity: v === threshold ? .55 : .16
+      }));
+      g.appendChild(el('text', {
+        x: L - 8, y: y + 3.5, 'text-anchor': 'end',
+        'font-size': 11, fill: 'currentColor', opacity: .55
+      }, v.toFixed(3)));
+    });
+    g.appendChild(el('text', {
+      x: W - R, y: s.y(threshold) - 7, 'text-anchor': 'end',
+      'font-size': 11, fill: 'currentColor', opacity: .6
+    }, 'alert threshold'));
+
+    // Hour axis.
+    var span = s.h1 - s.h0;
+    var step = span > 96 ? 24 : span > 40 ? 12 : span > 16 ? 6 : 2;
+    for (var h = Math.ceil(s.h0 / step) * step; h <= s.h1; h += step) {
+      g.appendChild(el('text', {
+        x: s.x(h), y: H - B + 18, 'text-anchor': 'middle',
+        'font-size': 11, fill: 'currentColor', opacity: .5
+      }, h));
+    }
+    g.appendChild(el('text', {
+      x: L, y: H - 6, 'font-size': 11, fill: 'currentColor', opacity: .5
+    }, 'hours since ICU admission'));
+
+    // Onset: when the care team was already acting.
+    if (c.onset_hour !== null && c.onset_hour <= s.h1) {
+      var ox = s.x(c.onset_hour);
+      g.appendChild(el('line', {
+        x1: ox, x2: ox, y1: T - 4, y2: H - B,
+        stroke: 'currentColor', 'stroke-width': 1.4, 'stroke-dasharray': '2 3', opacity: .65
+      }));
+      g.appendChild(el('text', {
+        x: ox - 6, y: T + 8, 'text-anchor': 'end', 'font-size': 11,
+        fill: 'currentColor', opacity: .75
+      }, 'clinical onset'));
+    }
+
+    // Lab draws, on the same timeline as the risk they produced.
+    c.lab_draws.forEach(function (h) {
+      g.appendChild(el('line', {
+        x1: s.x(h), x2: s.x(h), y1: H - B + 2, y2: H - B + 8,
+        stroke: 'currentColor', 'stroke-width': 1.6, opacity: .35, class: 'lab'
+      }));
+    });
+
+    var pts = c.hours.map(function (h, i) { return [s.x(h), s.y(c.risk[i])]; });
+    g.appendChild(el('path', {
+      d: path(pts), fill: 'none', stroke: 'currentColor',
+      'stroke-width': 1.2, opacity: .18
+    }));
+    g.appendChild(el('path', {
+      id: 'replay-trace', d: '', fill: 'none', stroke: 'var(--signal)',
+      'stroke-width': 2.2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'
+    }));
+    g.appendChild(el('line', {
+      id: 'replay-now', x1: 0, x2: 0, y1: T - 4, y2: H - B,
+      stroke: 'var(--ink-faint)', 'stroke-width': 1, opacity: .5
+    }));
+    g.appendChild(el('circle', {
+      id: 'replay-dot', r: 4.5, cx: -20, cy: -20, fill: 'var(--signal)'
+    }));
+
+    // Where it first crossed, drawn only once the cursor reaches it.
+    if (c.first_alert_hour !== null) {
+      g.appendChild(el('circle', {
+        id: 'replay-alert', cx: s.x(c.first_alert_hour), cy: -20, r: 5.5,
+        fill: 'none', stroke: 'var(--flag)', 'stroke-width': 2, opacity: 0
+      }));
+      g.appendChild(el('text', {
+        id: 'replay-alert-label', x: s.x(c.first_alert_hour), y: -20,
+        'text-anchor': 'middle', 'font-size': 11, 'font-weight': 600,
+        fill: 'var(--flag)', opacity: 0
+      }, 'first alert'));
+    }
+    riskSvg.appendChild(g);
+    return s;
+  }
+
+  function drawVitals(c) {
+    clear(vitalsBox);
+    var w = 240, h = 62, pad = 6;
+    data.vitals.forEach(function (name) {
+      var series = c.vitals[name] || [];
+      var seen = series.filter(function (v) { return v !== null; });
+      var lo = seen.length ? Math.min.apply(null, seen) : 0;
+      var hi = seen.length ? Math.max.apply(null, seen) : 1;
+      if (hi - lo < 1e-9) { hi = lo + 1; }
+
+      var wrap = document.createElement('div');
+      wrap.className = 'vital';
+      var head = document.createElement('div');
+      head.className = 'vital-head';
+      head.innerHTML = '<span>' + name + '</span><b data-vital="' + name + '">--</b>';
+      wrap.appendChild(head);
+
+      var svg = el('svg', { viewBox: '0 0 ' + w + ' ' + h, 'data-series': name });
+      var x = function (i) {
+        return pad + (series.length < 2 ? 0 : i / (series.length - 1)) * (w - 2 * pad);
+      };
+      var y = function (v) { return pad + (1 - (v - lo) / (hi - lo)) * (h - 2 * pad); };
+
+      var pts = [];
+      series.forEach(function (v, i) { if (v !== null) pts.push([x(i), y(v)]); });
+      svg.appendChild(el('path', {
+        d: path(pts), fill: 'none', stroke: 'currentColor', 'stroke-width': 1, opacity: .16
+      }));
+      svg.appendChild(el('path', {
+        class: 'vital-trace', d: '', fill: 'none', stroke: 'currentColor',
+        'stroke-width': 1.6, opacity: .75
+      }));
+      wrap.appendChild(svg);
+      vitalsBox.appendChild(wrap);
+
+      svg._pts = series.map(function (v, i) { return v === null ? null : [x(i), y(v)]; });
+    });
+  }
+
+  function render(c, s) {
+    var i = cursor;
+    var pts = [];
+    for (var k = 0; k <= i; k++) pts.push([s.x(c.hours[k]), s.y(c.risk[k])]);
+    document.getElementById('replay-trace').setAttribute('d', path(pts));
+
+    var cx = s.x(c.hours[i]), cy = s.y(c.risk[i]);
+    var now = document.getElementById('replay-now');
+    now.setAttribute('x1', cx); now.setAttribute('x2', cx);
+    var dot = document.getElementById('replay-dot');
+    dot.setAttribute('cx', cx); dot.setAttribute('cy', cy);
+    var firing = c.risk[i] >= threshold;
+    dot.setAttribute('fill', firing ? 'var(--flag)' : 'var(--signal)');
+
+    var alert = document.getElementById('replay-alert');
+    if (alert) {
+      var reached = c.first_alert_hour !== null && c.hours[i] >= c.first_alert_hour;
+      var ai = c.hours.indexOf(c.first_alert_hour);
+      alert.setAttribute('opacity', reached ? 1 : 0);
+      alert.setAttribute('cy', s.y(c.risk[ai < 0 ? 0 : ai]));
+      var label = document.getElementById('replay-alert-label');
+      label.setAttribute('opacity', reached ? 1 : 0);
+      label.setAttribute('y', s.y(c.risk[ai < 0 ? 0 : ai]) - 12);
+    }
+
+    // Vitals, revealed to the same hour.
+    vitalsBox.querySelectorAll('svg[data-series]').forEach(function (svg) {
+      var name = svg.getAttribute('data-series');
+      var pts2 = [];
+      var latest = null;
+      for (var k = 0; k <= i; k++) {
+        var p = svg._pts[k];
+        if (p) { pts2.push(p); latest = c.vitals[name][k]; }
+      }
+      svg.querySelector('.vital-trace').setAttribute('d', path(pts2));
+      var out = vitalsBox.querySelector('b[data-vital="' + name + '"]');
+      if (out) out.textContent = latest === null ? '--' : latest;
+    });
+
+    var hour = c.hours[i];
+    var parts = ['hour ' + hour, 'risk ' + c.risk[i].toFixed(4)];
+    if (firing) {
+      parts.push('ALERTING');
+      if (c.onset_hour !== null) {
+        var gap = c.onset_hour - hour;
+        parts.push(gap > 0 ? gap.toFixed(0) + ' h before onset'
+                           : Math.abs(gap).toFixed(0) + ' h after onset');
+      }
+    } else {
+      parts.push('below threshold');
+    }
+    clock.textContent = parts.join('  |  ');
+  }
+
+  function verdictText(c) {
+    if (!c.septic) {
+      return ['quiet', 'Never septic. Alerted on ' + c.n_alert_hours + ' of '
+              + c.stay_hours + ' hours.'];
+    }
+    if (c.lead_time_hours === null) {
+      return ['quiet', 'Septic. The model never crossed the threshold.'];
+    }
+    if (c.lead_time_hours > 0) {
+      return ['fired', 'Caught ' + c.lead_time_hours.toFixed(0)
+              + ' h before the care team acted.'];
+    }
+    return ['quiet', 'Alerted ' + Math.abs(c.lead_time_hours).toFixed(0)
+            + ' h after the care team acted. Not an early warning.'];
+  }
+
+  var scale = null;
+  function load(n) {
+    stop();
+    active = n;
+    var c = cases[n];
+    cursor = 0;
+    scrub.max = c.hours.length - 1;
+    scrub.value = 0;
+    whoLine.textContent = c.patient_id + '  |  ' + (c.age === null ? 'age not recorded' : c.age + ' years')
+      + '  |  ' + c.unit + '  |  ' + c.stay_hours + ' h stay';
+    var v = verdictText(c);
+    verdict.className = 'verdict ' + v[0];
+    verdict.textContent = v[1];
+    scale = drawRisk(c);
+    drawVitals(c);
+    render(c, scale);
+    Array.prototype.forEach.call(document.querySelectorAll('.replay .case'), function (b, k) {
+      if (k === n) { b.setAttribute('aria-current', 'true'); }
+      else { b.removeAttribute('aria-current'); }
+    });
+  }
+
+  function step() {
+    var c = cases[active];
+    if (cursor >= c.hours.length - 1) { stop(); return; }
+    cursor += 1;
+    scrub.value = cursor;
+    render(c, scale);
+  }
+
+  function stop() {
+    if (timer) { clearInterval(timer); timer = null; }
+    playBtn.textContent = 'Play';
+  }
+
+  function play() {
+    var c = cases[active];
+    if (cursor >= c.hours.length - 1) { cursor = 0; scrub.value = 0; render(c, scale); }
+    // About nine ICU hours a second: a whole stay in roughly ten seconds.
+    timer = setInterval(step, 110);
+    playBtn.textContent = 'Pause';
+  }
+
+  playBtn.addEventListener('click', function () { timer ? stop() : play(); });
+  scrub.addEventListener('input', function () {
+    stop();
+    cursor = parseInt(scrub.value, 10) || 0;
+    render(cases[active], scale);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.replay .case'), function (b) {
+    b.addEventListener('click', function () { load(parseInt(b.dataset.case, 10)); });
+  });
+
+  load(0);
+})();
+"""
+
+
+def replay_widget() -> str:
+    """The interactive replay, or nothing if the payload has not been built.
+
+    Everything the widget needs is inlined: the page has to survive being emailed
+    as a single file, so there is no fetch, no library and no server. The data is
+    pre-computed by `sepsis replay` -- the browser only draws it.
+    """
+    path = REPORTS / "replay.json"
+    if not path.exists():
+        return ""
+
+    payload = json.loads(path.read_text())
+    tabs = "".join(
+        f'<button type="button" class="case" data-case="{n}"'
+        f'{" aria-current=\'true\'" if n == 0 else ""}>'
+        f'<span class="case-role">{html.escape(CASE_LABELS.get(c["role"], c["role"]))}</span>'
+        f'<span class="case-id">{html.escape(c["patient_id"])}</span></button>'
+        for n, c in enumerate(payload["cases"])
+    )
+    return f"""<section class="replay" id="replay" aria-label="Admission replay">
+  <script type="application/json" id="replay-data">{json.dumps(payload)}</script>
+  <div class="case-bar" role="tablist">{tabs}</div>
+  <div class="replay-head">
+    <p class="who" id="replay-who"></p>
+    <p class="verdict" id="replay-verdict"></p>
+  </div>
+  <svg class="risk" id="replay-risk" viewBox="0 0 960 300" role="img"
+       aria-label="Model risk against ICU hour"></svg>
+  <div class="vitals" id="replay-vitals"></div>
+  <div class="transport">
+    <button type="button" id="replay-play" class="play">Play</button>
+    <input type="range" id="replay-scrub" min="0" max="1" value="0" step="1"
+           aria-label="ICU hour">
+    <output class="clock" id="replay-clock"></output>
+  </div>
+  <p class="replay-foot">Validation split, {html.escape(payload["model"])} at the frozen
+     threshold of {payload["threshold"]:.4f}. Ticks under the axis mark hours when a
+     sparse lab was drawn.</p>
+</section>"""
+
+
 def build() -> Path:
     md = (REPORTS / "REPORT.md").read_text()
     title, body = to_html(md)
@@ -485,7 +964,7 @@ def build() -> Path:
     page = f"""<title>Sepsis Early Warning</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="{FONTS}">
-<style>{CSS}</style>
+<style>{CSS}{REPLAY_CSS}</style>
 
 <main class="page">
   <header class="masthead">
@@ -520,6 +999,7 @@ def build() -> Path:
     ODbL v1.0 and downloaded at run time.
   </footer>
 </main>
+<script>{REPLAY_JS}</script>
 """
     # Escape every non-ASCII codepoint as a numeric entity. The published page is
     # wrapped in a head this script does not control, so it cannot rely on a

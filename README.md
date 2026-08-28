@@ -236,6 +236,36 @@ competing performance claim.
 
 ---
 
+## One admission at a time
+
+A median lead time of 36 hours is a fact about a cohort. The
+[HTML report](reports/report.html) replays four admissions hour by hour instead —
+the risk the model produced, when it crossed the threshold, when the care team
+actually started acting, and which labs were drawn along the way — so a whole ICU
+stay plays out in about ten seconds.
+
+| admission | what it shows | warning |
+|---|---|---|
+| `p014990` | caught, at the cohort's median lead time | +36 h |
+| `p002551` | caught, but only just | +1 h |
+| `p006176` | alerted *after* the team was already acting | −3 h |
+| `p018494` | never septic, above threshold 56 of 58 hours | — |
+
+Two choices make this evidence rather than a demo reel. **The cases come from the
+validation split, never from test** — validation was already spent on tuning and
+threshold selection, so looking again costs nothing, while picking illustrative
+cases from test would quietly convert a held-out set into a presentation set.
+**And the headline case is the median catch, not the best one.** Picking the
+largest lead time among 225 caught admissions would have been trivial and would
+have described nothing. Half the gallery is failures for the same reason.
+
+Selection is a deterministic rule per case, and each case is asserted against the
+role it is published under: a case captioned as caught must have alerted before
+onset. A caption contradicting its own chart is the failure that matters, because
+the chart is what a reader believes.
+
+---
+
 ## Why this problem
 
 Sepsis kills roughly one in five people who develop it, and mortality rises about
@@ -413,6 +443,7 @@ src/sepsis/
 ├── report.py              REPORT.md generation
 ├── cli.py                 command-line entry point
 ├── regress.py             published numbers vs. the committed baseline
+├── replay.py              the admissions the report replays, and why those
 ├── data/
 │   ├── download.py        resumable parallel fetch → per-hospital Parquet
 │   ├── integrity.py       rolled-up sha256 per hospital, verified on rebuild
@@ -450,7 +481,7 @@ src/sepsis/
 ```bash
 make setup      # uv venv on Python 3.12 + install
 make all        # ~35 min end to end on a laptop CPU (22 of it Optuna)
-make test       # 109 tests, ~4 s
+make test       # 125 tests, ~4 s
 make regress    # every published number still where the baseline left it
 ```
 

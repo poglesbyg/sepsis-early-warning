@@ -398,7 +398,21 @@ def stage_evaluate(cfg: Config = CFG, models: tuple[str, ...] = MODELS) -> dict:
 
 
 # --------------------------------------------------------------------------
-# Stage 4b: experiments
+# Stage 4b: replay
+# --------------------------------------------------------------------------
+def stage_replay(cfg: Config = CFG) -> dict:
+    """Pick and pre-compute the admissions the report replays hour by hour."""
+    from . import replay
+
+    cfg.ensure_dirs()
+    t = time.time()
+    payload = replay.write(cfg)
+    _log("replay", f"{len(payload['cases'])} admissions in {time.time() - t:.0f}s")
+    return payload
+
+
+# --------------------------------------------------------------------------
+# Stage 4c: experiments
 # --------------------------------------------------------------------------
 def stage_experiments(cfg: Config = CFG, only: tuple[str, ...] = ()) -> dict:
     """Run the registered experiments and persist each one's table, prose and metadata.
@@ -433,5 +447,6 @@ def run_all(cfg: Config = CFG, skip: tuple[str, ...] = ()) -> dict:
     explore = stage_explore(frames, cfg)
     stage_train(frames, explore, cfg, skip=skip)
     payload = stage_evaluate(cfg)
+    stage_replay(cfg)
     stage_experiments(cfg)
     return payload

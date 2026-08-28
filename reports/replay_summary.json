@@ -1,0 +1,53 @@
+{
+  "model": "xgboost",
+  "split": "val",
+  "threshold": 0.030849673202614378,
+  "cohort": {
+    "septic_admissions": 268,
+    "admissions": 3051,
+    "detected_before_onset": 225,
+    "median_lead_time_h": 36.0
+  },
+  "cases": [
+    {
+      "role": "median_catch",
+      "patient_id": "p014990",
+      "septic": true,
+      "stay_hours": 87,
+      "onset_hour": 85.0,
+      "first_alert_hour": 49.0,
+      "lead_time_hours": 36.0,
+      "n_alert_hours": 39
+    },
+    {
+      "role": "near_miss",
+      "patient_id": "p002551",
+      "septic": true,
+      "stay_hours": 8,
+      "onset_hour": 7.0,
+      "first_alert_hour": 6.0,
+      "lead_time_hours": 1.0,
+      "n_alert_hours": 3
+    },
+    {
+      "role": "missed",
+      "patient_id": "p006176",
+      "septic": true,
+      "stay_hours": 50,
+      "onset_hour": 48.0,
+      "first_alert_hour": 51.0,
+      "lead_time_hours": -3.0,
+      "n_alert_hours": 1
+    },
+    {
+      "role": "false_alarm",
+      "patient_id": "p018494",
+      "septic": false,
+      "stay_hours": 58,
+      "onset_hour": null,
+      "first_alert_hour": 1.0,
+      "lead_time_hours": null,
+      "n_alert_hours": 56
+    }
+  ]
+}

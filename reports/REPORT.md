@@ -64,6 +64,25 @@ That +0.0544 gap is selection optimism, and it is expected: taking the maximum o
 
 `detection_rate` counts a septic admission as caught only if the first alert lands *before* clinical onset; an alert raised after the team already suspected sepsis is not an early warning.
 
+## One admission at a time
+
+A median lead time of 36 hours is a fact about 268 admissions, and it does not answer the question a clinician asks first, which is what this thing would have done in front of one patient. Below, four admissions replayed hour by hour at the frozen operating point: the risk the model produced, when it crossed the alert threshold, and when the care team actually started acting.
+
+**The cases come from the validation split, never from test.** Validation was already spent on tuning, calibration and threshold selection, so nothing is lost by looking at it again. Choosing illustrative cases from the test split would quietly convert a held-out set into a presentation set. It also means the probabilities on screen are in-sample for the isotonic map, which was fitted on this split: the replay is about timing, not about calibration quality.
+
+**The headline case is the median, not the best.** `p014990` alerts 36 hours before onset because 36 hours is where the median of the 225 caught admissions sits. Picking the largest lead time in the cohort would have been easy and would have described nothing. Two of the four cases are failures for the same reason: `p006176` alerts 3 hours *after* the team was already acting, which is not an early warning, and `p018494` is a 25-year-old who never became septic and sat above the threshold for 56 of 58 hours. `p002551` is the third kind of case worth seeing: caught, with 1 hour of warning, which is a catch by the metric and close to useless at the bedside.
+
+<!-- replay -->
+
+| admission   | what it shows                            |   stay (h) | sepsis   | onset hour   |   first alert | warning (h)   |   alert hours |
+|:------------|:-----------------------------------------|-----------:|:---------|:-------------|--------------:|:--------------|--------------:|
+| p014990     | caught, at the cohort's median lead time |         87 | yes      | 85           |            49 | +36           |            39 |
+| p002551     | caught, but only just                    |          8 | yes      | 7            |             6 | +1            |             3 |
+| p006176     | not caught in time                       |         50 | yes      | 48           |            51 | -3            |             1 |
+| p018494     | no sepsis, alarm anyway                  |         58 | no       | —            |             1 | —             |            56 |
+
+Lab draws are marked on the same timeline as the risk. The feature-block ablation found that ordering behaviour alone reaches 97% of the full matrix's AUROC, so what the team chose to measure belongs next to the risk it produced.
+
 ## Experiments
 
 Each experiment changes exactly one thing, refits, and reports what that change was worth. Every one of them asserts its own invariants before returning, so a variant that failed to commit the mistake it was studying raises rather than publishing a plausible wrong number.

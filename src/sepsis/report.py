@@ -139,6 +139,11 @@ def write_report(cfg: Config = CFG) -> Path:
             "already suspected sepsis is not an early warning.\n"
         )
 
+    # --- replay -----------------------------------------------------------
+    replay_path = cfg.reports_dir / "replay.json"
+    if replay_path.exists():
+        add(_replay_section(json.loads(replay_path.read_text())))
+
     # --- experiment layer -------------------------------------------------
     from .experiments import REGISTRY
 
@@ -251,3 +256,77 @@ def write_report(cfg: Config = CFG) -> Path:
     path.write_text("\n".join(lines))
     print(f"[report] wrote {path}", flush=True)
     return path
+
+
+CASE_CAPTIONS = {
+    "median_catch": "caught, at the cohort's median lead time",
+    "near_miss": "caught, but only just",
+    "missed": "not caught in time",
+    "false_alarm": "no sepsis, alarm anyway",
+}
+
+
+def _replay_section(payload: dict) -> str:
+    """One admission at a time, replayed hour by hour.
+
+    The Markdown form is a table, because Markdown cannot animate. The HTML
+    report replaces the marker below with the interactive replay; the table stays
+    in both, since it is the legend either way.
+    """
+    cohort = payload["cohort"]
+    by_role = {c["role"]: c for c in payload["cases"]}
+    catch, near, missed, alarm = (by_role[r] for r in ("median_catch", "near_miss", "missed", "false_alarm"))
+
+    rows = []
+    for case in payload["cases"]:
+        lead = case["lead_time_hours"]
+        rows.append(
+            {
+                "admission": case["patient_id"],
+                "what it shows": CASE_CAPTIONS[case["role"]],
+                "stay (h)": case["stay_hours"],
+                "sepsis": "yes" if case["septic"] else "no",
+                "onset hour": "—" if case["onset_hour"] is None else f"{case['onset_hour']:.0f}",
+                "first alert": "never" if case["first_alert_hour"] is None else f"{case['first_alert_hour']:.0f}",
+                "warning (h)": "—" if lead is None else f"{lead:+.0f}",
+                "alert hours": case["n_alert_hours"],
+            }
+        )
+
+    text = [
+        "## One admission at a time\n",
+        f"A median lead time of {cohort['median_lead_time_h']:.0f} hours is a fact "
+        f"about {cohort['septic_admissions']} admissions, and it does not answer the "
+        f"question a clinician asks first, which is what this thing would have done "
+        f"in front of one patient. Below, four admissions replayed hour by hour at "
+        f"the frozen operating point: the risk the model produced, when it crossed "
+        f"the alert threshold, and when the care team actually started acting.\n",
+        f"**The cases come from the validation split, never from test.** Validation "
+        f"was already spent on tuning, calibration and threshold selection, so "
+        f"nothing is lost by looking at it again. Choosing illustrative cases from "
+        f"the test split would quietly convert a held-out set into a presentation "
+        f"set. It also means the probabilities on screen are in-sample for the "
+        f"isotonic map, which was fitted on this split: the replay is about timing, "
+        f"not about calibration quality.\n",
+        f"**The headline case is the median, not the best.** `{catch['patient_id']}` "
+        f"alerts {catch['lead_time_hours']:.0f} hours before onset because "
+        f"{catch['lead_time_hours']:.0f} hours is where the median of the "
+        f"{cohort['detected_before_onset']} caught admissions sits. Picking the "
+        f"largest lead time in the cohort would have been easy and would have "
+        f"described nothing. Two of the four cases are failures for the same "
+        f"reason: `{missed['patient_id']}` alerts "
+        f"{abs(missed['lead_time_hours']):.0f} hours *after* the team was already "
+        f"acting, which is not an early warning, and `{alarm['patient_id']}` is a "
+        f"{alarm['age']:.0f}-year-old who never became septic and sat above the "
+        f"threshold for {alarm['n_alert_hours']} of {alarm['stay_hours']} hours. "
+        f"`{near['patient_id']}` is the third kind of case worth seeing: caught, "
+        f"with {near['lead_time_hours']:.0f} hour of warning, which is a catch by "
+        f"the metric and close to useless at the bedside.\n",
+        "<!-- replay -->\n",
+        pd.DataFrame(rows).to_markdown(index=False) + "\n",
+        f"Lab draws are marked on the same timeline as the risk. The feature-block "
+        f"ablation found that ordering behaviour alone reaches 97% of the full "
+        f"matrix's AUROC, so what the team chose to measure belongs next to the "
+        f"risk it produced.\n",
+    ]
+    return "\n".join(text)
