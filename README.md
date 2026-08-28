@@ -180,6 +180,62 @@ rather than in a footnote.
 
 ---
 
+## Two boundaries, two different failure modes
+
+"It doesn't generalise" is not one finding. The repository crosses two boundaries
+and measures them separately, and they break in opposite ways.
+
+**Hospital A to hospital B.** The utility gap is 0.130 (95% CI 0.066–0.182) at a
+threshold frozen on hospital A's validation split. Hospital B's admissions are
+then reweighted to hospital A's baseline case mix — age, sex, unit, early vitals,
+and how much lab work was ordered in the first six hours — by a trimmed propensity
+density ratio, which cuts mean covariate imbalance from 0.220 to 0.075 |SMD| while
+retaining an effective 53% of 20,000 admissions.
+
+| hospital B | septic admissions | AUROC | utility |
+|---|---|---|---|
+| as observed | 5.7% | 0.787 | 0.295 |
+| reweighted to A's case mix | 6.7% | 0.786 | 0.312 |
+| *hospital A, for reference* | *8.8%* | *0.823* | *0.424* |
+
+**Measured case mix accounts for +0.017 of the 0.130 gap, and that component is
+not separable from zero** (95% CI −0.004 to +0.042). Re-picking the threshold on
+hospital B recovers another 5%. So neither of the two comfortable explanations —
+different patients, stale operating point — survives contact with the numbers.
+What is left is either genuine degradation or a difference the 17 covariates do
+not capture, which is why the residual is reported as an upper bound on
+degradation rather than a measurement of it.
+
+**MICU to SICU.** Train on medical ICU admissions, test on surgical ICU
+admissions in the same hospital. Direction fixed in advance; admissions with no
+recorded unit form a third bucket rather than disappearing.
+
+| cohort | admissions | septic | AUROC (95% CI) | utility, A's threshold | utility, retuned |
+|---|---|---|---|---|---|
+| MICU, held out | 1,137 | 10.8% | 0.805 (0.779–0.835) | 0.458 | 0.459 |
+| SICU | 4,650 | 4.0% | 0.781 (0.748–0.818) | **0.042** | 0.299 |
+| unit not recorded | 8,090 | 10.4% | 0.785 (0.773–0.798) | 0.380 | 0.396 |
+
+**Discrimination survives the boundary — the confidence intervals overlap — and
+the deployed configuration still loses 91% of its value.** The septic rate is
+10.8% in the MICU and 4.0% in the SICU, and a threshold tuned where sepsis is
+common fires far too often where it is rare. Retuning that one number recovers
+most of it, without retraining and without new labels.
+
+Put side by side: across hospitals the model's scores degrade and its threshold
+is fine; across units the scores transfer and the threshold is catastrophic. A
+single "external AUROC" column would have shown neither. The largest bucket in
+the unit experiment is also the one with no unit recorded at all — dropping it
+would have made the transfer claim cleaner and the cohort unrepresentative of the
+hospital it came from.
+
+The experiment layer refits the champion configuration itself and scores raw
+booster output, so its absolute numbers sit slightly above the calibrated
+headline table. Each experiment is read as a contrast within itself, never as a
+competing performance claim.
+
+---
+
 ## Why this problem
 
 Sepsis kills roughly one in five people who develop it, and mortality rises about
@@ -373,10 +429,16 @@ src/sepsis/
 │   ├── deep.py            causal Conv1D→GRU · tabular MLP
 │   ├── calibration.py     isotonic/Platt · reliability · expected-cost thresholds
 │   └── ensemble.py        rank-space blending · leave-one-out ablation
-└── evaluate/
-    ├── metrics.py         vectorised utility · DeLong · cluster bootstrap
-    ├── lead_time.py       per-admission alert timing
-    └── plots.py           report figures
+├── evaluate/
+│   ├── metrics.py         vectorised utility · DeLong · cluster bootstrap
+│   ├── lead_time.py       per-admission alert timing
+│   └── plots.py           report figures
+└── experiments/           one module per question, explicitly registered
+    ├── common.py          shared fit-and-score · weighted utility · guards
+    ├── leakage.py         what the two classic mistakes are worth
+    ├── ablation.py        what each feature block buys
+    ├── prevalence.py      case mix vs. degradation, hospital A → B
+    └── unit_transfer.py   MICU → SICU, with the unrecorded-unit bucket
 ```
 
 ---
@@ -386,7 +448,7 @@ src/sepsis/
 ```bash
 make setup      # uv venv on Python 3.12 + install
 make all        # ~35 min end to end on a laptop CPU (22 of it Optuna)
-make test       # 48 tests, ~3 s
+make test       # 86 tests, ~4 s
 ```
 
 The download is ~310 MB across 40,336 small files, fetched 32-way in parallel

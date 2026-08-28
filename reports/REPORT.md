@@ -98,6 +98,36 @@ Two readings follow. The optimistic one: missingness is signal, and the recency 
 | missing   | panel-level ordering activity                       |            7 |          0.8197 |     0.0009 |       0.7196 |            0.4158 |            -0.0011 |
 | deviation | each channel against the patient's own running mean |           34 |          0.8200 |     0.0006 |       0.7365 |            0.4181 |            -0.0034 |
 
+### Case mix or degradation: decomposing the hospital B drop
+
+At the operating point frozen on hospital A's validation split (threshold 0.519, applied unchanged everywhere), hospital A scores 0.4243 normalised utility and hospital B scores 0.2946: a gap of **0.1297** (95% CI 0.0655 to 0.1817). Hospital B's admissions are reweighted to hospital A's baseline case mix -- demographics, unit, early vitals and first-six-hour ordering volume -- by a propensity density ratio trimmed at the 1st and 99th percentiles. That weighting cuts mean covariate imbalance from 0.220 to 0.075 |SMD| and retains an effective 53% of 20,000 admissions.
+
+Reweighted, hospital B scores **0.3120**. So of the 0.1297 gap, **+0.0174 is case mix** (95% CI -0.0041 to +0.0419) and **+0.1123 is what remains after adjustment** (95% CI +0.0450 to +0.1724) — most of the gap survives the adjustment, and the case-mix component is not separable from zero. Both intervals come from a 200-replicate patient-level cluster bootstrap that refits the propensity model on every replicate, so the uncertainty of the reweighting is inside the interval rather than assumed away.
+
+Two cautions on reading the second number as degradation. The adjustment can only correct for the 17 covariates it was given, so anything that differs between two health systems and is not in that list — treatment practice, labelling behaviour, unmeasured acuity — stays in the residual. And reweighting on baseline covariates does not force the septic rate to match: it moves from 5.7% to 6.7% against hospital A's 8.8%. The residual is an upper bound on degradation, not a measurement of it.
+
+One candidate explanation can be ruled out without any modelling. The threshold is frozen at hospital A's, by design, because that is what deploying a model means, and a frozen threshold is exactly the kind of thing that stops working at a new site. Here it does not: re-picking the threshold on hospital B alone moves its utility from 0.2946 only to 0.3006, 5% of the gap. Hospital A's threshold is already very nearly the right threshold for hospital B, so the loss is in the scores themselves, not in where the line is drawn. The MICU-to-SICU experiment in the next section runs the same check across a different boundary and gets the opposite answer, which is the useful pairing: a model can cross a boundary intact while its operating point does not, and it can carry its operating point across intact and still lose most of its value.
+
+| cohort                                  |   n_admissions |   septic_admissions_pct |   auroc |   utility |   utility_gap_vs_A |
+|:----------------------------------------|---------------:|------------------------:|--------:|----------:|-------------------:|
+| hospital A (test)                       |           3051 |                  8.8168 |  0.8229 |    0.4243 |             0.0000 |
+| hospital B (as observed)                |          20000 |                  5.7100 |  0.7868 |    0.2946 |            -0.1297 |
+| hospital B (reweighted to A's case mix) |          20000 |                  6.7276 |  0.7856 |    0.3120 |            -0.1123 |
+
+### MICU to SICU: a shift this cohort can actually support
+
+Trained on 2,727 medical ICU admissions and evaluated at a threshold frozen on held-out MICU patients (0.445), the model scores AUROC **0.8046** (95% CI 0.7794 to 0.8348) on MICU admissions it has not seen, and **0.7810** (0.7477 to 0.8183) on surgical ICU admissions: a drop of +0.0236, and the two intervals overlap, so discrimination is not measurably worse across the unit boundary.
+
+Clinical utility tells a harsher story: 0.4579 at home against **0.0419** in the SICU. Most of that is not the model getting worse at ranking patients. The septic rate is 10.8% in the MICU and 4.0% in the SICU, and an alert threshold tuned where sepsis is common fires far too often where it is rare. Retuning the threshold on the SICU alone recovers +0.2573 to 0.2992 — that recovery is the price of shipping one operating point across a boundary the units do not share, and it is available in production by re-picking a threshold, without retraining.
+
+The third bucket is the one it would be convenient to omit: 8,090 admissions where neither unit indicator was recorded — more than either named unit — scoring AUROC 0.7849 at 10.4% prevalence. Dropping them would have made the transfer claim cleaner and the cohort unrepresentative of the hospital it came from.
+
+| cohort                               |   n_admissions |   n_hours |   septic_admissions_pct |   auroc |   auroc_lo |   auroc_hi |   utility_frozen |   utility_retuned |
+|:-------------------------------------|---------------:|----------:|------------------------:|--------:|-----------:|-----------:|-----------------:|------------------:|
+| MICU (held out, same unit)           |           1137 |     43417 |                 10.8179 |  0.8046 |     0.7794 |     0.8348 |           0.4579 |            0.4592 |
+| SICU (surgical, the transfer target) |           4650 |    169821 |                  4.0000 |  0.7810 |     0.7477 |     0.8183 |           0.0419 |            0.2992 |
+| unit not recorded                    |           8090 |    327827 |                 10.4326 |  0.7849 |     0.7727 |     0.7982 |           0.3799 |            0.3956 |
+
 ## Statistical analysis
 
 245 of 331 features separate septic from non-septic admissions at FDR < 0.05 (Benjamini-Hochberg over Welch tests). Tests are run on one summary value per admission, not per ICU hour: hours within a stay are strongly autocorrelated, and treating them as independent inflates significance by orders of magnitude.

@@ -87,17 +87,8 @@ def fit_and_score(
     """
     from sklearn.metrics import roc_auc_score
 
-    dtrain = xgb.DMatrix(train[features], label=train["SepsisLabel"], feature_names=features)
-    dtest = xgb.DMatrix(test[features], label=test["SepsisLabel"], feature_names=features)
-
-    booster = xgb.train(
-        {**BASE_PARAMS, **CHAMPION_PARAMS, "seed": seed,
-         "scale_pos_weight": scale_pos_weight(train["SepsisLabel"].to_numpy())},
-        dtrain,
-        num_boost_round=rounds,
-        verbose_eval=False,
-    )
-    scores = booster.predict(dtest)
+    booster = fit_booster(train, features, rounds=rounds, seed=seed)
+    scores = predict(booster, test, features)
     y = test["SepsisLabel"].to_numpy()
 
     scorer = UtilityScorer(y, test["patient_id"].to_numpy())
@@ -184,3 +175,101 @@ def row_split(
         frame.iloc[np.sort(idx[:cut])].reset_index(drop=True),
         frame.iloc[np.sort(idx[cut:])].reset_index(drop=True),
     )
+
+
+# --------------------------------------------------------------------------
+# Shift experiments: fit once, score several cohorts, at a frozen threshold
+# --------------------------------------------------------------------------
+def fit_booster(
+    train: pd.DataFrame,
+    features: list[str],
+    rounds: int = CHAMPION_ROUNDS,
+    seed: int = 0,
+) -> xgb.Booster:
+    """The champion configuration, fitted. Separated from scoring because the
+    shift experiments fit once and then score three or four different cohorts."""
+    dtrain = xgb.DMatrix(train[features], label=train["SepsisLabel"], feature_names=features)
+    return xgb.train(
+        {**BASE_PARAMS, **CHAMPION_PARAMS, "seed": seed,
+         "scale_pos_weight": scale_pos_weight(train["SepsisLabel"].to_numpy())},
+        dtrain,
+        num_boost_round=rounds,
+        verbose_eval=False,
+    )
+
+
+def predict(booster: xgb.Booster, frame: pd.DataFrame, features: list[str]) -> np.ndarray:
+    return booster.predict(
+        xgb.DMatrix(frame[features], feature_names=features)
+    ).astype(np.float64)
+
+
+def assert_contiguous_admissions(groups: np.ndarray) -> None:
+    """``UtilityScorer`` reads each admission as one contiguous run of rows.
+
+    If a frame is not sorted that way the scorer silently treats one stay as
+    several, invents extra onsets, and returns a number that looks fine.
+    """
+    groups = pd.Series(np.asarray(groups))
+    runs = int((groups != groups.shift()).sum())
+    distinct = int(groups.nunique())
+    if runs != distinct:
+        raise ValueError(
+            f"{runs - distinct} admission(s) split across non-adjacent rows; "
+            f"sort by patient then hour before scoring utility"
+        )
+
+
+def weighted_utility(
+    scorer: UtilityScorer, alerts: np.ndarray, row_weights: np.ndarray
+) -> float:
+    """Normalised utility on a population where each hour counts ``row_weights``.
+
+    Identical to ``UtilityScorer.score`` when every weight is 1: the numerator and
+    the normalising constant are both linear in the per-hour weight, so this is the
+    utility of the pseudo-population in which each admission appears ``w`` times.
+    """
+    alerts = np.asarray(alerts, dtype=np.float64)
+    row_weights = np.asarray(row_weights, dtype=np.float64)
+    denom = float(row_weights @ np.maximum(scorer.delta, 0.0))
+    if denom <= 0:
+        raise ValueError("weighted utility has no achievable range; the cohort has no scored positive hour")
+    return float((row_weights * alerts) @ scorer.delta / denom)
+
+
+def admission_utility_parts(
+    scorer: UtilityScorer, alerts: np.ndarray, groups: np.ndarray
+) -> pd.DataFrame:
+    """Per-admission numerator and denominator of the normalised utility.
+
+    Utility is a ratio of two sums over hours, and both sums decompose by
+    admission. Precomputing the two per-admission terms turns every later
+    reweighting or bootstrap replicate into two dot products over ~20,000
+    admissions instead of a pass over ~760,000 hours.
+    """
+    delta = scorer.delta
+    frame = pd.DataFrame(
+        {
+            "patient_id": np.asarray(groups),
+            "num": np.asarray(alerts, dtype=np.float64) * delta,
+            "den": np.maximum(delta, 0.0),
+        }
+    )
+    return frame.groupby("patient_id", observed=True, sort=False)[["num", "den"]].sum()
+
+
+def baseline_covariates(
+    frame: pd.DataFrame, columns: list[str], window: int = 6
+) -> pd.DataFrame:
+    """One row per admission, taken from the last hour of its first ``window``.
+
+    Case mix has to be characterised by something, and the alternative -- the very
+    first hour alone -- barely separates two hospitals. The six-hour window buys
+    ordering behaviour and early vitals. It is *not* a model input: these values
+    weight a population, they never reach a prediction, so the no-lookahead
+    invariant is not in play. Stays shorter than the window contribute their last
+    available hour.
+    """
+    hour = frame["hour"] - frame.groupby("patient_id", observed=True)["hour"].transform("min")
+    early = frame.loc[hour < window, ["patient_id", *columns]]
+    return early.groupby("patient_id", observed=True, sort=False).tail(1).set_index("patient_id")

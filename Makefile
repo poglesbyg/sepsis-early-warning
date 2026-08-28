@@ -2,7 +2,7 @@ VENV ?= .venv
 PY   := $(VENV)/bin/python
 PIP  := uv pip install --python $(PY)
 
-.PHONY: help setup data features explore train evaluate all test clean clean-all
+.PHONY: help setup data features explore train evaluate experiments html all quick test clean clean-all
 
 help:
 	@grep -E '^[a-z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -25,6 +25,9 @@ train:      ## fit baseline, logistic regression, XGBoost and the causal GRU
 
 evaluate:   ## calibrate, blend, score every split, write reports/REPORT.md
 	$(PY) -m sepsis.cli evaluate
+
+experiments: ## leakage, feature-block ablation and the two shift experiments
+	$(PY) -m sepsis.cli experiments
 
 html:       ## render reports/REPORT.md as a single self-contained HTML page
 	$(PY) scripts/build_html_report.py

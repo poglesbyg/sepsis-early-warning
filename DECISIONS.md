@@ -229,45 +229,90 @@ do not silently move published results, which is a narrower and honest claim.
 Written before the corresponding code exists, because a shift experiment without a
 stated estimand produces a number nobody can interpret.
 
-### PLANNED — prevalence-shift decomposition
+### Prevalence-shift decomposition — built
 
-**Question.** Hospital B utility is 0.328 against hospital A's 0.394, and septic
-prevalence is 5.7% against 8.8%. How much of the gap is case mix, and how much is
-genuine model degradation?
+**Question.** Hospital B utility is lower than hospital A's, and septic prevalence
+is 5.7% against 8.8%. How much of the gap is case mix, and how much is genuine
+model degradation?
 
 "Case mix versus degradation" is not identifiable from prevalence alone, so the
-decomposition must fix the following before any code:
+following was fixed before any code was written, and the implementation in
+`src/sepsis/experiments/prevalence.py` follows it:
 
-- **Estimand.** Performance on hospital B reweighted so its covariate distribution
-  matches hospital A's, compared against hospital B unweighted. The difference
-  between those two is the case-mix component; the residual gap against hospital A
-  is degradation.
+- **Estimand.** Performance on hospital B reweighted so its covariate
+  distribution matches hospital A's, compared against hospital B unweighted. The
+  difference is the case-mix component; the residual gap against hospital A is
+  degradation.
 - **Reference distribution.** Hospital A's training split.
-- **Weights.** Estimated by a propensity model over the static covariates and
-  admission-level summaries, with weights trimmed at the 1st and 99th percentiles
-  and the trimming reported.
-- **Calibration.** Held fixed, not refit on hospital B. Refitting would answer a
-  different question (how well *could* it transfer) and must be reported
-  separately if done at all.
-- **Uncertainty.** Patient-level cluster bootstrap over the whole reweighting
-  procedure, not over the final statistic alone.
+- **Weights.** A propensity model over 17 admission-level baseline covariates,
+  weights trimmed at the 1st and 99th percentiles, trimming reported.
+- **Calibration.** Held fixed, not refit on hospital B. The threshold is frozen on
+  hospital A's validation split and applied unchanged everywhere.
+- **Uncertainty.** Patient-level cluster bootstrap that refits the propensity
+  model on every replicate, not one that recomputes the final statistic alone.
 
-### PLANNED — MICU to SICU transfer
+Three implementation choices the specification did not settle:
+
+**The baseline window is six hours, not one.** Case mix has to be characterised by
+something, and the admission's first hour alone barely separates two hospitals.
+Six hours buys early vitals and, more importantly, ordering volume — the most
+visible difference between two health systems. These values weight a population
+and never reach a prediction, so the no-lookahead invariant is not in play; the
+weights are admission-level by construction.
+
+**The reweighting asserts that it did something.** Mean |SMD| must fall, the
+propensity AUC must stay below 0.99, and the effective sample size must stay above
+5% of the cohort. A reweighting that extrapolates instead of reweighting, or that
+collapses the cohort onto a handful of patients, produces a number that describes
+those patients rather than a hospital, and nothing downstream would notice.
+
+**The retuned-threshold diagnostic is reported alongside.** It is not part of the
+estimand — the estimand freezes the operating point deliberately, because that is
+what deploying a model means — but the unit-transfer experiment below shows an
+operating point can fail to cross a boundary while the model survives it. Without
+the diagnostic, a reader would have no way to tell which of the two was happening
+here.
+
+**Result.** Of a 0.130 utility gap, measured case mix accounts for +0.017 with a
+confidence interval straddling zero, and re-picking the threshold on hospital B
+recovers about 5%. The residual is an upper bound on degradation, not a
+measurement of it: the adjustment can only correct for the covariates it was
+given.
+
+### MICU to SICU transfer — built
 
 **Claim under test.** A model trained on medical ICU admissions transfers to
 surgical ICU admissions within the same health system.
 
 - **Direction.** Train on `Unit1` (MICU), test on `Unit2` (SICU). One direction
-  only, stated in advance, so the better-looking direction cannot be chosen after
-  the fact.
+  only, stated in advance, so the better-looking direction could not be chosen
+  after the fact.
 - **Missing units.** Admissions where both indicators are absent form an explicit
-  third bucket, reported separately. They are never silently dropped.
-- **Additive.** The existing random-split numbers stay published unchanged. This
-  is an additional result, not a replacement.
+  third bucket, reported separately. They are never silently dropped — and they
+  turned out to be the largest of the three.
+- **Additive.** The random-split numbers stay published unchanged.
 - **What it is not.** Not a temporal split and not external validation. Both units
-  sit in the same hospital system, so this measures care-pathway shift and may be
-  dominated by prevalence differences between units, which will be reported
-  alongside it.
+  sit in the same hospital system, so this measures care-pathway shift, and the
+  units differ sharply in septic rate, which is reported alongside.
+
+Two implementation choices:
+
+**MICU is split three ways, not two.** Fit, freeze the threshold, and a held-out
+within-unit slice. Without the within-unit number the SICU result is unreadable: a
+drop could just as easily be the cost of training on a third of the pool as the
+cost of crossing the boundary.
+
+**The unit indicator columns are dropped from the feature matrix.** They are
+constant across the training cohort and take an unseen value in every evaluation
+bucket, so leaving them in would measure the model's reaction to a dead column
+rather than the transfer.
+
+**Result.** Discrimination crosses the boundary intact — AUROC 0.805 to 0.781,
+overlapping intervals — while utility at the frozen threshold falls from 0.458 to
+0.042, and retuning the threshold alone recovers most of that. The failure is the
+operating point, not the model. Paired with the hospital result, which fails the
+other way round, that is the argument against reporting one external number and
+calling it generalisation.
 
 ### PLANNED — illustrative cases come from validation
 

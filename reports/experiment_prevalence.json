@@ -1,0 +1,73 @@
+{
+  "threshold": 0.5194390131600538,
+  "utility_a": 0.4242981802568604,
+  "utility_b": 0.2945647974982361,
+  "utility_b_reweighted": 0.31200604675869986,
+  "auroc_a": 0.8229209216583346,
+  "auroc_b": 0.7868468018112451,
+  "auroc_b_reweighted": 0.7855525481158505,
+  "gap": 0.12973338275862428,
+  "case_mix_component": 0.017441249260463754,
+  "degradation_component": 0.11229213349816053,
+  "case_mix_share": 0.13443917740828593,
+  "utility_b_retuned": 0.3005929423306864,
+  "utility_a_retuned": 0.42418705090482045,
+  "ci": {
+    "gap": [
+      0.0655495769934302,
+      0.1817237887471531
+    ],
+    "case_mix": [
+      -0.004136226290772404,
+      0.04185114493501651
+    ],
+    "degradation": [
+      0.04499208662592087,
+      0.17237603785838437
+    ],
+    "auroc_gap": [
+      0.010017812285058198,
+      0.06227690165168424
+    ],
+    "auroc_degradation": [
+      0.011037236380104853,
+      0.06705064715027731
+    ]
+  },
+  "n_boot": 200,
+  "prevalence_a": 0.08816781383153065,
+  "prevalence_b": 0.0571,
+  "prevalence_b_reweighted": 0.0672763902886733,
+  "covariates": [
+    "age",
+    "gender",
+    "unit_micu",
+    "unit_sicu",
+    "unit_unknown",
+    "hosp_adm_time",
+    "HR_mean6",
+    "O2Sat_mean6",
+    "Temp_mean6",
+    "SBP_mean6",
+    "MAP_mean6",
+    "Resp_mean6",
+    "WBC_n_obs",
+    "Lactate_n_obs",
+    "Creatinine_n_obs",
+    "BUN_n_obs",
+    "Platelets_n_obs"
+  ],
+  "trim_percentiles": [
+    1.0,
+    99.0
+  ],
+  "propensity_auc": 0.7781982085148236,
+  "ess": 10630.415854602028,
+  "ess_fraction": 0.5315207927301014,
+  "max_weight": 5.299979280964397,
+  "weight_p99_over_median": 7.494948095215514,
+  "smd_before": 0.22019751330618864,
+  "smd_after": 0.07486591513506868,
+  "max_smd_before": 0.621832538962457,
+  "max_smd_after": 0.2684734916932745
+}

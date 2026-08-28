@@ -225,3 +225,259 @@ def test_ablation_rejects_a_block_scoring_below_chance():
     membership = {b: ["x"] for b in FEATURE_BLOCKS}
     with pytest.raises(ValueError, match="below chance"):
         _assert_blocks_are_real(table, n_features=n, membership=membership)
+
+
+# --------------------------------------------------------------------------
+# Weighted scoring: reweighting a cohort must mean what it says
+# --------------------------------------------------------------------------
+def _toy_cohort(n_patients=8, n_hours=30):
+    """Labels and admission ids in the shape ``UtilityScorer`` expects."""
+    frame = _toy_stays(n_patients=n_patients, n_hours=n_hours)
+    rng = np.random.default_rng(3)
+    return (
+        frame["SepsisLabel"].to_numpy(),
+        frame["patient_id"].to_numpy(),
+        rng.random(len(frame)),
+    )
+
+
+def test_weighted_utility_reduces_to_the_plain_score_at_unit_weights():
+    from sepsis.evaluate.metrics import UtilityScorer
+    from sepsis.experiments.common import weighted_utility
+
+    y, groups, scores = _toy_cohort()
+    scorer = UtilityScorer(y, groups)
+    alerts = (scores >= 0.5).astype(float)
+
+    assert weighted_utility(scorer, alerts, np.ones(len(y))) == pytest.approx(
+        scorer.score(alerts)
+    )
+
+
+def test_a_weight_of_two_equals_the_admission_appearing_twice():
+    """The property the whole reweighting rests on.
+
+    If doubling an admission's weight is not the same as that admission being in
+    the cohort twice, the reweighted hospital B number is not the utility of any
+    population and the decomposition means nothing.
+    """
+    from sepsis.evaluate.metrics import UtilityScorer
+    from sepsis.experiments.common import weighted_utility
+
+    frame = _toy_stays(n_patients=6, n_hours=25)
+    rng = np.random.default_rng(0)
+    frame["score"] = rng.random(len(frame))
+    chosen = frame["patient_id"].unique()[0]
+
+    duplicate = frame[frame["patient_id"] == chosen].copy()
+    duplicate["patient_id"] = chosen + "_copy"
+    doubled = pd.concat([frame, duplicate], ignore_index=True).sort_values(
+        ["patient_id", "hour"], ignore_index=True
+    )
+
+    plain = UtilityScorer(frame["SepsisLabel"].to_numpy(), frame["patient_id"].to_numpy())
+    twice = UtilityScorer(doubled["SepsisLabel"].to_numpy(), doubled["patient_id"].to_numpy())
+
+    weights = np.where(frame["patient_id"].to_numpy() == chosen, 2.0, 1.0)
+    weighted = weighted_utility(
+        plain, (frame["score"] >= 0.5).astype(float).to_numpy(), weights
+    )
+    materialised = twice.score((doubled["score"] >= 0.5).astype(float).to_numpy())
+
+    assert weighted == pytest.approx(materialised)
+
+
+def test_admission_utility_parts_reconstruct_the_cohort_score():
+    from sepsis.evaluate.metrics import UtilityScorer
+    from sepsis.experiments.common import admission_utility_parts
+
+    y, groups, scores = _toy_cohort()
+    scorer = UtilityScorer(y, groups)
+    alerts = (scores >= 0.4).astype(float)
+
+    parts = admission_utility_parts(scorer, alerts, groups)
+    assert parts["num"].sum() / parts["den"].sum() == pytest.approx(scorer.score(alerts))
+
+
+def test_contiguity_check_rejects_an_interleaved_frame():
+    """``UtilityScorer`` reads each admission as one run of rows; an unsorted frame
+    invents extra admissions and extra onsets, silently."""
+    from sepsis.experiments.common import assert_contiguous_admissions
+
+    assert_contiguous_admissions(np.array(["a", "a", "b", "b", "c"]))
+    with pytest.raises(ValueError, match="non-adjacent"):
+        assert_contiguous_admissions(np.array(["a", "b", "a"]))
+
+
+def test_baseline_covariates_never_read_past_the_window():
+    from sepsis.experiments.common import baseline_covariates
+
+    frame = pd.DataFrame(
+        {
+            "patient_id": ["p0"] * 10 + ["p1"] * 3,
+            "hour": list(range(10)) + [0, 1, 2],
+            "age": list(range(10)) + [100, 101, 102],
+        }
+    )
+    out = baseline_covariates(frame, ["age"], window=6)
+    assert out.loc["p0", "age"] == 5, "must take the last hour inside the window"
+    assert out.loc["p1", "age"] == 102, "a short stay contributes its final hour"
+
+
+def test_baseline_covariates_handle_a_stay_that_does_not_start_at_hour_zero():
+    from sepsis.experiments.common import baseline_covariates
+
+    frame = pd.DataFrame(
+        {"patient_id": ["p0"] * 8, "hour": range(20, 28), "age": range(8)}
+    )
+    out = baseline_covariates(frame, ["age"], window=6)
+    assert out.loc["p0", "age"] == 5, "the window is relative to the stay, not to hour 0"
+
+
+# --------------------------------------------------------------------------
+# Prevalence-shift decomposition guards
+# --------------------------------------------------------------------------
+def test_decomposition_must_close():
+    from sepsis.experiments.prevalence import _assert_decomposition
+
+    _assert_decomposition(gap=0.13, case_mix=0.02, degradation=0.11)
+    with pytest.raises(ValueError, match="does not close"):
+        _assert_decomposition(gap=0.13, case_mix=0.02, degradation=-0.11)
+
+
+def _overlap_diagnostics(**overrides):
+    base = {
+        "propensity_auc": 0.78,
+        "ess_fraction": 0.53,
+        "smd_before": 0.22,
+        "smd_after": 0.07,
+    }
+    return {**base, **overrides}
+
+
+def test_overlap_guard_accepts_a_supported_reweighting():
+    from sepsis.experiments.prevalence import _assert_overlap
+
+    _assert_overlap(_overlap_diagnostics())
+
+
+def test_overlap_guard_rejects_two_cohorts_that_do_not_overlap():
+    from sepsis.experiments.prevalence import _assert_overlap
+
+    with pytest.raises(ValueError, match="no covariate overlap"):
+        _assert_overlap(_overlap_diagnostics(propensity_auc=0.997))
+
+
+def test_overlap_guard_rejects_a_collapsed_effective_sample():
+    from sepsis.experiments.prevalence import _assert_overlap
+
+    with pytest.raises(ValueError, match="effective"):
+        _assert_overlap(_overlap_diagnostics(ess_fraction=0.01))
+
+
+def test_overlap_guard_rejects_a_reweighting_that_worsened_balance():
+    """Weights that do not move the covariates toward the reference are not a
+    case-mix adjustment, whatever the resulting number looks like."""
+    from sepsis.experiments.prevalence import _assert_overlap
+
+    with pytest.raises(ValueError, match="did not improve covariate balance"):
+        _assert_overlap(_overlap_diagnostics(smd_after=0.30))
+
+
+def test_smd_is_zero_between_a_cohort_and_itself():
+    from sepsis.experiments.prevalence import _smd
+
+    rng = np.random.default_rng(0)
+    cohort = pd.DataFrame(rng.normal(size=(500, 4)), columns=list("abcd"))
+    assert np.abs(_smd(cohort, cohort, np.ones(len(cohort)))).max() < 1e-9
+
+
+def test_smd_detects_a_shifted_covariate():
+    from sepsis.experiments.prevalence import _smd
+
+    rng = np.random.default_rng(0)
+    reference = pd.DataFrame({"a": rng.normal(0, 1, 500)})
+    target = pd.DataFrame({"a": rng.normal(1, 1, 500)})
+    assert _smd(reference, target, np.ones(len(target)))[0] > 0.5
+
+
+# --------------------------------------------------------------------------
+# Unit-transfer guards
+# --------------------------------------------------------------------------
+def _unit_pool(micu=3, sicu=3, unknown=2, n_hours=5):
+    rows = []
+    for label, n in (("unit_micu", micu), ("unit_sicu", sicu), ("unit_unknown", unknown)):
+        for i in range(n):
+            frame = pd.DataFrame({"hour": range(n_hours)})
+            frame["patient_id"] = f"{label}_{i}"
+            for col in ("unit_micu", "unit_sicu", "unit_unknown"):
+                frame[col] = float(col == label)
+            rows.append(frame)
+    return pd.concat(rows, ignore_index=True)
+
+
+def test_unit_buckets_must_partition_the_pool():
+    from sepsis.experiments.unit_transfer import _assert_buckets, _bucket_admissions
+
+    pool = _unit_pool()
+    _assert_buckets(_bucket_admissions(pool), pool)
+
+
+def test_unit_buckets_reject_an_admission_in_two_units():
+    from sepsis.experiments.unit_transfer import _assert_buckets, _bucket_admissions
+
+    pool = _unit_pool()
+    pool.loc[pool["patient_id"] == "unit_micu_0", "unit_sicu"] = 1.0
+    with pytest.raises(ValueError, match="more than one unit bucket"):
+        _assert_buckets(_bucket_admissions(pool), pool)
+
+
+def test_unit_buckets_reject_an_admission_in_no_unit():
+    from sepsis.experiments.unit_transfer import _assert_buckets, _bucket_admissions
+
+    pool = _unit_pool()
+    pool.loc[pool["patient_id"] == "unit_unknown_0", "unit_unknown"] = 0.0
+    with pytest.raises(ValueError, match="silently dropped"):
+        _assert_buckets(_bucket_admissions(pool), pool)
+
+
+def test_unit_transfer_rejects_a_training_admission_in_an_evaluation_bucket():
+    from sepsis.experiments.unit_transfer import _assert_no_overlap
+
+    _assert_no_overlap(["a", "b"], ["c"], {"SICU": np.array(["d", "e"])})
+    with pytest.raises(ValueError, match="not held out"):
+        _assert_no_overlap(["a", "b"], ["c"], {"SICU": np.array(["b", "e"])})
+
+
+def test_unit_transfer_rejects_a_bucket_with_no_septic_admission():
+    from sepsis.experiments.unit_transfer import _assert_scored
+
+    table = pd.DataFrame(
+        {"cohort": ["MICU", "SICU"], "septic_admissions_pct": [10.0, 0.0], "auroc": [0.8, 0.8]}
+    )
+    with pytest.raises(ValueError, match="no septic admission"):
+        _assert_scored(table)
+
+
+def test_unit_transfer_rejects_below_chance_transfer():
+    from sepsis.experiments.unit_transfer import _assert_scored
+
+    table = pd.DataFrame(
+        {"cohort": ["MICU", "SICU"], "septic_admissions_pct": [10.0, 4.0], "auroc": [0.8, 0.41]}
+    )
+    with pytest.raises(ValueError, match="cohort assembly error"):
+        _assert_scored(table)
+
+
+def test_unit_indicators_are_excluded_from_the_transfer_feature_set():
+    """Training on one unit makes these constant, and every evaluation bucket takes
+    a value the model never saw. Leaving them in measures a dead column."""
+    from sepsis.experiments.unit_transfer import UNIT_COLUMNS, transfer_features
+
+    frame = build_features(_toy_stays(n_patients=4, n_hours=20))
+    assert set(UNIT_COLUMNS) <= set(feature_columns(frame)), (
+        "the columns must exist in the matrix to be worth excluding"
+    )
+    used = transfer_features(frame)
+    assert not set(UNIT_COLUMNS) & set(used)
+    assert len(used) == len(feature_columns(frame)) - len(UNIT_COLUMNS)

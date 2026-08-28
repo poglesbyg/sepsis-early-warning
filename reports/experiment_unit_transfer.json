@@ -1,0 +1,20 @@
+{
+  "direction": "train Unit1 (MICU), test Unit2 (SICU)",
+  "threshold": 0.4446395804834127,
+  "n_fit_admissions": 2727,
+  "n_threshold_admissions": 681,
+  "excluded_features": [
+    "unit_micu",
+    "unit_sicu",
+    "unit_unknown"
+  ],
+  "auroc_home": 0.8046459476513681,
+  "auroc_sicu": 0.7810050569822347,
+  "auroc_drop": 0.02364089066913344,
+  "utility_home": 0.45791475335943893,
+  "utility_sicu": 0.041915346588244105,
+  "utility_sicu_retuned": 0.29924764550932775,
+  "prevalence_home": 10.817941952506596,
+  "prevalence_sicu": 4.0,
+  "n_boot": 200
+}

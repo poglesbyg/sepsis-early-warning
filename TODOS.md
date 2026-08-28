@@ -22,6 +22,13 @@ now would pull focus before the in-repo version has proven useful.
 the number is large and stable, the harness is worth building; if it is small,
 the case for a general tool is weaker.
 
+**Now known.** Splitting rows instead of admissions inflates AUROC by +0.0275 and
+clinical utility by +0.0796 on this cohort — the utility movement is roughly three
+times the AUROC movement, and that ratio is the part a general tool would exist to
+show. It clears the revisit bar. What it does not settle is whether the number
+holds past one dataset; a harness that reported one cohort's inflation as though
+it were a constant would be its own failure mode.
+
 ---
 
 ## Interactive cost-ratio explorer in the published report
