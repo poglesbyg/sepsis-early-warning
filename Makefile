@@ -2,7 +2,7 @@ VENV ?= .venv
 PY   := $(VENV)/bin/python
 PIP  := uv pip install --python $(PY)
 
-.PHONY: help setup data features explore train evaluate experiments html all quick test clean clean-all
+.PHONY: help setup data features explore train evaluate experiments html all quick regress regress-update test clean clean-all
 
 help:
 	@grep -E '^[a-z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -37,6 +37,12 @@ all:        ## the whole pipeline, end to end
 
 quick:      ## same pipeline with a small search budget, for a fast check
 	$(PY) -m sepsis.cli all --trials 8 --timeout 300
+
+regress:    ## check every published number against configs/regression_baseline.json
+	$(PY) -m sepsis.cli regress
+
+regress-update: ## move the baseline deliberately, as a reviewable diff
+	$(PY) -m sepsis.cli regress --update
 
 test:       ## run the test suite
 	$(PY) -m pytest -q

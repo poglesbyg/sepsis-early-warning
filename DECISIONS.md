@@ -219,8 +219,51 @@ mean.
 
 Seeds are fixed and the pipeline is deterministic on one machine, but nothing here
 guarantees a third party reproduces these numbers across package versions,
-hardware, or solver behaviour. The planned check (below) verifies that code changes
-do not silently move published results, which is a narrower and honest claim.
+hardware, or solver behaviour. `make regress` verifies something narrower and
+checkable: that a change to the code does not silently move a number this
+repository has already published.
+
+Every number the report and README quote already lands in a JSON artifact, so the
+check flattens those artifacts to dotted keys and compares 362 of them against
+`configs/regression_baseline.json`. Three properties make it worth having:
+
+- **The baseline is committed**, so moving a published number is a reviewable diff
+  in version control rather than an edit nobody sees. `make regress-update` is the
+  only way to move it.
+- **A number that stops being published fails the check.** Deleting a metric is
+  otherwise the easiest way to make a regression disappear.
+- **It compares artifacts rather than recomputing them.** It costs seconds, not the
+  35 minutes a rerun costs, and it verifies whatever the last pipeline run wrote.
+  That is the trade: it cannot tell you a stage was never re-run, so it belongs
+  after the stage whose numbers you expect to have left alone.
+
+**Rejected:** exact equality across machines. The tolerance is 1e-6 absolute — tight
+enough that any real change trips it, loose enough not to fail on floating-point
+summation order — and the claim stays scoped to one machine, because that is the
+only claim the evidence supports.
+
+### The data integrity check is a self-check, and says so
+
+A file count detects a truncated download and nothing else. A file truncated
+mid-write, a byte flipped in transit, or an upstream revision under a stable
+filename all produce a complete-looking dataset and a model trained on something
+other than what the published numbers describe.
+
+PhysioNet publishes no per-file checksums for this release: its `SHA256SUMS.txt`
+is three lines covering `LICENSE.txt` and two SVG diagrams, none of the 40,336
+patient files. So there is nothing upstream to verify against, and
+`configs/data_checksums.json` pins what *this* repository downloaded rather than
+what PhysioNet says it should have.
+
+**Rejected:** 40,336 per-file hashes. That is a 2 MB committed artifact whose diff
+nobody reads. The digest is rolled up per hospital over `name:digest` lines in
+sorted filename order — sensitive to renamed, added and removed files as well as
+to changed bytes — and on a mismatch the check re-walks the files to say whether
+the file list, the total size, or only the contents moved.
+
+**A missing manifest is not a failure.** A clone whose data predates the check has
+nothing to compare against, and refusing to run would push people to skip the
+check entirely.
 
 ---
 

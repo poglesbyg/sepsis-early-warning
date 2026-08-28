@@ -412,8 +412,10 @@ src/sepsis/
 ├── pipeline.py            stage orchestration
 ├── report.py              REPORT.md generation
 ├── cli.py                 command-line entry point
+├── regress.py             published numbers vs. the committed baseline
 ├── data/
 │   ├── download.py        resumable parallel fetch → per-hospital Parquet
+│   ├── integrity.py       rolled-up sha256 per hospital, verified on rebuild
 │   └── loader.py          admission-level splits
 ├── features/
 │   ├── temporal.py        LOCF · recency · intensity · baseline deviation · rolling
@@ -448,12 +450,28 @@ src/sepsis/
 ```bash
 make setup      # uv venv on Python 3.12 + install
 make all        # ~35 min end to end on a laptop CPU (22 of it Optuna)
-make test       # 86 tests, ~4 s
+make test       # 109 tests, ~4 s
+make regress    # every published number still where the baseline left it
 ```
 
 The download is ~310 MB across 40,336 small files, fetched 32-way in parallel
 with atomic writes, and is resumable — an interrupted run picks up where it
 stopped. Everything after it is cached, so `make all` is cheap to re-run.
+
+`make data` verifies the download against `configs/data_checksums.json` — a
+rolled-up sha256 per hospital over the sorted per-file digests. PhysioNet
+publishes no per-file checksums for this release, so that manifest pins what this
+repository downloaded rather than what upstream says it should be. It catches the
+failures a file count cannot: a byte flipped in transit, a file truncated
+mid-write, a silent upstream revision.
+
+`make regress` compares 362 published values — every number in `reports/*.json`,
+which is every number the report and this README quote — against a committed
+baseline. A number that moves fails; a number that stops being published fails;
+a new one is reported and does not. Moving the baseline is `make regress-update`,
+which shows up as a reviewable diff rather than a silent edit. It is a regression
+check, not a reproducibility claim: nothing here guarantees these numbers survive
+a different machine, and the [decisions log](DECISIONS.md) says so at more length.
 
 For a fast end-to-end check with a small search budget:
 

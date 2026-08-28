@@ -1,0 +1,12 @@
+{
+  "A": {
+    "n_files": 20336,
+    "sha256": "d1dcb993b31dcea653429bfd3ecbbe770f78c56cda3ad648219d3226fef6ac6a",
+    "total_bytes": 131388704
+  },
+  "B": {
+    "n_files": 20000,
+    "sha256": "62185b625a8ff54818dd27fb0e0d7381c472b5b75cd1577558c924594f5ce0e9",
+    "total_bytes": 123668780
+  }
+}
