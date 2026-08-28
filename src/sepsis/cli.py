@@ -7,6 +7,7 @@
     sepsis evaluate             calibrate, blend, score, write REPORT.md
     sepsis replay               pick and pre-compute the admissions the report replays
     sepsis experiments          run the registered ablations and shift experiments
+    sepsis card                 regenerate MODEL_CARD.md and the subgroup breakdown
     sepsis regress              check published numbers against the committed baseline
     sepsis all                  everything, in order
 """
@@ -54,6 +55,8 @@ def main(argv: list[str] | None = None) -> int:
     p_exp = sub.add_parser("experiments", help="run the registered experiments")
     p_exp.add_argument("--only", nargs="*", default=[], help="run only these experiments")
 
+    sub.add_parser("card", help="regenerate the model card")
+
     p_regress = sub.add_parser("regress", help="check published numbers against the baseline")
     p_regress.add_argument("--update", action="store_true",
                            help="rewrite the baseline from the current artifacts")
@@ -98,6 +101,8 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "experiments":
         pipeline.stage_experiments(cfg, only=tuple(args.only))
         write_report(cfg)
+    elif args.command == "card":
+        pipeline.stage_card(cfg)
     elif args.command == "regress":
         from . import regress
 

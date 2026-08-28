@@ -2,7 +2,7 @@ VENV ?= .venv
 PY   := $(VENV)/bin/python
 PIP  := uv pip install --python $(PY)
 
-.PHONY: help setup data features explore train evaluate replay experiments html all quick regress regress-update test clean clean-all
+.PHONY: help setup data features explore train evaluate replay experiments card html all quick regress regress-update test clean clean-all
 
 help:
 	@grep -E '^[a-z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -31,6 +31,9 @@ replay:     ## pick the admissions the report replays, hour by hour
 
 experiments: ## leakage, feature-block ablation and the two shift experiments
 	$(PY) -m sepsis.cli experiments
+
+card:       ## regenerate MODEL_CARD.md, with performance broken out by subgroup
+	$(PY) -m sepsis.cli card
 
 html:       ## render reports/REPORT.md as a single self-contained HTML page
 	$(PY) scripts/build_html_report.py

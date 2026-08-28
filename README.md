@@ -463,6 +463,33 @@ together as one loadable object.
 
 ---
 
+## Who it works less well for
+
+[`MODEL_CARD.md`](MODEL_CARD.md) is generated from the run's own artifacts rather
+than written by hand, so it cannot quietly go stale, and `make regress` fails if a
+number in it moves without the baseline moving too. Its substance is the
+disaggregated evaluation this repository otherwise lacks: performance by sex, age
+band and admitting unit, on both hospitals, at the frozen operating point with
+patient-level bootstrap intervals.
+
+Two things it surfaces that no aggregate shows:
+
+- On hospital A the model scores 0.845 AUROC on female admissions against 0.793 on
+  male ones — but the intervals overlap and the same two groups differ by 0.005 at
+  hospital B. Reported as what it is: a gap at one site that does not replicate at
+  the other.
+- **60% of non-septic MICU admissions raise at least one alert, against 12% in the
+  SICU, at the same threshold.** Whoever staffs those two units experiences two
+  different systems.
+
+The card is also where the limits go that a results table has no room for: the
+label is clinical suspicion rather than biology, nothing here is prospectively
+validated, and the cohort carries no race, ethnicity, insurance status or language,
+so the disparities most often asked about in clinical ML cannot be assessed on this
+data at all — not checked and found absent, simply absent from the columns.
+
+---
+
 ## Pipeline
 
 ```
@@ -496,6 +523,7 @@ src/sepsis/
 ├── regress.py             published numbers vs. the committed baseline
 ├── replay.py              the admissions the report replays, and why those
 ├── inference.py           the serving contract: schema, semantics, guarantee
+├── model_card.py          MODEL_CARD.md, generated, with the subgroup breakdown
 ├── data/
 │   ├── download.py        resumable parallel fetch → per-hospital Parquet
 │   ├── integrity.py       rolled-up sha256 per hospital, verified on rebuild
@@ -533,7 +561,7 @@ src/sepsis/
 ```bash
 make setup      # uv venv on Python 3.12 + install
 make all        # ~35 min end to end on a laptop CPU (22 of it Optuna)
-make test       # 140 tests, ~5 s
+make test       # 151 tests, ~6 s
 make regress    # every published number still where the baseline left it
 ```
 

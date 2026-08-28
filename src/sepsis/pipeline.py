@@ -427,7 +427,21 @@ def stage_replay(cfg: Config = CFG) -> dict:
 
 
 # --------------------------------------------------------------------------
-# Stage 4c: experiments
+# Stage 4c: model card
+# --------------------------------------------------------------------------
+def stage_card(cfg: Config = CFG) -> Path:
+    """Regenerate MODEL_CARD.md, including the disaggregated evaluation."""
+    from .model_card import write_card
+
+    cfg.ensure_dirs()
+    t = time.time()
+    path = write_card(cfg)
+    _log("card", f"MODEL_CARD.md in {time.time() - t:.0f}s")
+    return path
+
+
+# --------------------------------------------------------------------------
+# Stage 4d: experiments
 # --------------------------------------------------------------------------
 def stage_experiments(cfg: Config = CFG, only: tuple[str, ...] = ()) -> dict:
     """Run the registered experiments and persist each one's table, prose and metadata.
@@ -464,4 +478,5 @@ def run_all(cfg: Config = CFG, skip: tuple[str, ...] = ()) -> dict:
     payload = stage_evaluate(cfg)
     stage_replay(cfg)
     stage_experiments(cfg)
+    stage_card(cfg)
     return payload

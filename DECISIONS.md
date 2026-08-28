@@ -443,3 +443,43 @@ Gaps must be materialised as all-NaN rows.
 **Rejected:** filling gaps automatically. Silently inventing rows on the way into
 a model is how the leakage this repository measures gets introduced in the first
 place, and a caller who is dropping hours has a data problem worth knowing about.
+
+---
+
+## The model card
+
+### It is generated, not written
+
+A card edited by hand goes stale the first time anything is retrained, and a stale
+card is worse than none: it is a document whose whole purpose is to be trusted
+about limitations. `MODEL_CARD.md` is produced from the same artifacts the report
+reads, and its numbers are pinned by `make regress` like every other published
+figure.
+
+**Rejected:** a hand-written card. Cost of getting it wrong: a limitations section
+describing a model that no longer exists, with nothing to catch the drift.
+
+### Subgroups are shown even when they cannot be scored
+
+A group with fewer than 10 admissions in either class is listed with its size and
+no metrics, rather than dropped. Dropping it would hide that the model was never
+meaningfully evaluated there, which is exactly the fact a reader of a model card is
+looking for.
+
+### The written reading names the same two groups at both sites
+
+The card does not only tabulate subgroups, it says what the table shows. The
+comparison is computed by finding the widest gap on hospital A and then reporting
+**those same two groups** at hospital B, rather than each site's own extremes:
+comparing each site's best-against-worst would be two different comparisons
+reported as one, and would manufacture a disparity out of noise.
+
+That check earns its keep immediately. The sex gap on hospital A is 0.052 AUROC
+with overlapping intervals, and the same two groups differ by 0.005 at hospital B.
+The card says so, rather than reporting the first number alone.
+
+### What the data cannot answer is stated as such
+
+PhysioNet/CinC 2019 carries no race, ethnicity, insurance status, language or
+calendar time. The card says these cannot be assessed rather than omitting the
+subject, because silence on a fairness axis reads as a clean bill of health.
