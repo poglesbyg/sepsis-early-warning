@@ -412,6 +412,57 @@ tuning on AUROC and hoping.
 
 ---
 
+## Shipping it
+
+A FastAPI wrapper and a Dockerfile were considered and cut: they are the most
+generatable artifacts in an ML repository and say almost nothing about the work.
+What survived is the part a service wrapper leaves implicit.
+
+```python
+from sepsis.inference import predict
+
+predict(history)
+# Prediction(hour=58, risk=0.0767, alert=True, threshold=0.0308)
+```
+
+`history` is one admission's charted hours up to and including the hour being
+scored. The open question was whether the contract should take a batch of hours
+or one hour at a time with carried state. It takes a history and returns the risk
+for its latest hour, and both other shapes fall out of that:
+
+| call | what it is for | cost |
+|---|---|---|
+| `score_latest(history)` | the live hourly call | O(t) at hour *t* |
+| `score_stay(stay)` | backfill, evaluation, the replay | O(n) for the whole stay |
+
+**The two are equal, value for value** — the model cannot tell whether you handed
+it the whole stay or replayed it hour by hour. That is the no-lookahead invariant
+showing up as an API guarantee rather than a claim, and
+[`tests/test_inference.py`](tests/test_inference.py) asserts it at every hour of a
+stay, alongside a check that the served number is bit-identical to the published
+one. A 58-hour admission scores in about 38 ms either way.
+
+The contract refuses input it would otherwise misread: two admissions in one call,
+duplicate hours, missing channel columns, and — the subtle one — **a skipped
+hour**. Recency and intensity features count rows rather than clock time, so an
+omitted hour silently reads as though no time passed. Gaps must be materialised as
+all-NaN rows.
+
+**The recurrent model is not served, and the reason is the contract.** The booster
+is stateless: hand it a history, get a number. The GRU either replays the whole
+stay through the network every hour or carries a hidden state per admission —
+state that must be persisted, recovered after a restart, invalidated when a past
+hour is corrected, and kept consistent across replicas. That is a different system
+with different failure modes, in exchange for a model that scores lower here and
+transfers worse. So the booster alone gets a contract.
+
+Fitting the calibration map used to happen only inside the evaluate stage, in
+memory, which meant nothing outside that process could reproduce a published
+prediction. The model, its isotonic map and its frozen threshold now travel
+together as one loadable object.
+
+---
+
 ## Pipeline
 
 ```
@@ -444,6 +495,7 @@ src/sepsis/
 ├── cli.py                 command-line entry point
 ├── regress.py             published numbers vs. the committed baseline
 ├── replay.py              the admissions the report replays, and why those
+├── inference.py           the serving contract: schema, semantics, guarantee
 ├── data/
 │   ├── download.py        resumable parallel fetch → per-hospital Parquet
 │   ├── integrity.py       rolled-up sha256 per hospital, verified on rebuild
@@ -481,7 +533,7 @@ src/sepsis/
 ```bash
 make setup      # uv venv on Python 3.12 + install
 make all        # ~35 min end to end on a laptop CPU (22 of it Optuna)
-make test       # 125 tests, ~4 s
+make test       # 140 tests, ~5 s
 make regress    # every published number still where the baseline left it
 ```
 

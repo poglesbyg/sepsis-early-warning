@@ -56,10 +56,12 @@ and two interactives on one page compete for the same attention.
 repository and carries little information about the work. What survived instead is
 a minimal documented inference contract.
 
-**If it returns, one design decision is unresolved:** what is the inference
-contract — a batch of hours, or one hour at a time with carried state? The
-gradient booster is stateless. The GRU is not. That difference changes the API
-shape and should be settled before anything is written.
+**The design decision this entry was holding open is now settled.**
+`src/sepsis/inference.py` takes an admission's history and returns the risk for
+its most recent hour; batch scoring falls out of that as an exactly equal
+convenience, and the recurrent model is not served precisely because it would need
+carried state. If a service wrapper ever returns, it is a transport layer over
+that contract rather than a place where the semantics get decided.
 
 ---
 

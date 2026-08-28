@@ -27,6 +27,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from . import inference
 from .config import CFG, SPARSE_LABS, Config
 from .data.loader import make_splits, split_summary
 from .evaluate import plots
@@ -308,6 +309,20 @@ def stage_evaluate(cfg: Config = CFG, models: tuple[str, ...] = MODELS) -> dict:
     # -- operating points fixed on validation ------------------------------
     thresholds = {m: scorer_val.best_threshold(calibrated("val", m))[0] for m in available}
     thresholds["ensemble"] = scorer_val.best_threshold(blended("val"))[0]
+
+    # -- freeze the served bundle ------------------------------------------
+    # The calibration map existed only inside this function until now, which meant
+    # nothing outside the evaluate stage could reproduce a published prediction.
+    # The model, its map and its operating point are one deployable object.
+    if inference.SERVED_MODEL in available:
+        bundle = inference.ServingBundle(
+            model=inference.SERVED_MODEL,
+            features=list(ModelArtifact.load(inference.SERVED_MODEL, cfg).features),
+            calibrator=calibrators[inference.SERVED_MODEL],
+            threshold=float(thresholds[inference.SERVED_MODEL]),
+        )
+        _log("evaluate", f"serving bundle written to {bundle.save(cfg).name} "
+                         f"(threshold {bundle.threshold:.4f})")
 
     # -- score every split at the frozen thresholds ------------------------
     rows, sweeps, curve_data, timings = [], {}, {}, {}

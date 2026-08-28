@@ -391,3 +391,55 @@ what a reader believes.
 validation, which is where these admissions come from, so the replay is evidence
 about timing rather than about calibration quality, and the report says so where
 it is displayed rather than in a footnote.
+
+---
+
+## Serving
+
+### The contract takes a history and returns one hour, and batch falls out of it
+
+The open question, recorded in `TODOS.md` before anything was written, was whether
+inference should accept a batch of hours or one hour at a time with carried state.
+The booster is stateless and the GRU is not, and that difference changes the API
+shape.
+
+**Settled: a history in, the risk for its most recent hour out.** Streaming is the
+native call and batch scoring is a convenience that returns the same values,
+because every feature at hour *t* depends only on hours <= *t*. The equivalence is
+asserted at every hour of a stay rather than assumed, so if the feature builder
+ever starts reading ahead, the contract's own tests fail before a deployment
+behaves unlike the report.
+
+**Rejected: carried state.** Caching derived features between hours would turn an
+O(t) call into an O(1) one and buy nothing at ICU scale -- tens of hours, one call
+an hour, per patient -- while adding state that needs invalidation rules, restart
+recovery, and consistency across replicas. Cost of getting that wrong: a served
+score that silently disagrees with the published one, which is the failure this
+project exists to argue against.
+
+**Rejected: serving the ensemble or the GRU.** The recurrent model is the reason
+the shape question was open, and it is not served. Replaying a whole stay through
+the network every hour or persisting a hidden state per admission is a different
+system with different failure modes, in exchange for a model that scores lower on
+this data and transfers worse to hospital B. The booster alone was already the
+honest recommendation, so the booster alone has a contract.
+
+### A model without its calibration map is not a deployable object
+
+The isotonic map was fitted inside the evaluate stage and never persisted, so
+nothing outside that process could reproduce a published prediction. The model,
+its calibration map and its frozen threshold are now written together as one
+bundle, and loading refuses a bundle whose feature list disagrees with the fitted
+model rather than serving numbers nobody could trace.
+
+### Input that would be misread is refused, not repaired
+
+Two admissions in one call, duplicate hours, missing channel columns, and a
+skipped hour are all rejected. The last one matters most and is the least
+obvious: recency and intensity features count *rows*, not the `hour` column, so an
+omitted hour reads as though no time passed and every staleness feature shifts.
+Gaps must be materialised as all-NaN rows.
+
+**Rejected:** filling gaps automatically. Silently inventing rows on the way into
+a model is how the leakage this repository measures gets introduced in the first
+place, and a caller who is dropping hours has a data problem worth knowing about.
