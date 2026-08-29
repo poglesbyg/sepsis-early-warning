@@ -573,7 +573,15 @@ src/sepsis/
     ├── prevalence.py      case mix vs. degradation, hospital A → B
     ├── mechanism.py       is ordering behaviour what fails to transfer?
     └── unit_transfer.py   MICU → SICU, with the unrecorded-unit bucket
+
+scripts/
+├── build_html_report.py   REPORT.md → one self-contained page, with the replay
+└── build_essay.py         the essay, with interval figures built from the artifacts
 ```
+
+Both builders are standard library only and read only committed inputs, so
+[`.github/workflows/pages.yml`](.github/workflows/pages.yml) rebuilds and publishes
+both pages on every push without the dataset, the models, or a dependency install.
 
 ---
 
