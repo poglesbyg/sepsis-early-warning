@@ -14,6 +14,8 @@ SICU number running from −0.059 to 0.188.
 
 Zero on that scale means *never alerting at all*. The interval includes it.
 
+<!-- figure:utility -->
+
 ## What that number is, and what it is not
 
 The metric is the PhysioNet/CinC 2019 clinical utility score. It is time-dependent
@@ -38,7 +40,9 @@ and costs the same.
 ## The threshold is the part that didn't transfer
 
 Choosing a new threshold on one half of the SICU and scoring it on the other half
-takes utility from 0.088 to **0.408** — a gain of +0.319, 95% CI +0.243 to +0.444.
+takes utility from 0.088 to **0.408**.
+
+<!-- figure:gain -->
 
 Two things about that number, both of which I got wrong in the first draft of this
 post.
@@ -96,9 +100,11 @@ hospitals.
 | everything (345 features) | 0.823 | 0.787 | 0.036 |
 | no ordering behaviour (236) | 0.817 | 0.792 | 0.025 |
 
-Withholding ordering behaviour **shrinks the transfer gap by 0.011, 95% CI +0.0004 to
-+0.021.** The interval excludes zero and sits right against it: the direction holds,
-the size is not established by this.
+Withholding ordering behaviour shrinks the transfer gap, and the interval excludes
+zero while sitting right against it: the direction holds, the size is not established
+by this.
+
+<!-- figure:mechanism -->
 
 The pattern is the interesting part. The model that cannot see ordering behaviour is
 *worse at home and better away*. Those features are not noise to regularise out.

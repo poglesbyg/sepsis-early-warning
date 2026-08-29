@@ -64,8 +64,16 @@ def render_table(rows: list[str]) -> str:
     return f'<div class="scroller"><table>{head}<tbody>{rows_html}</tbody></table></div>'
 
 
-def to_html(md: str) -> tuple[str, str]:
-    """Return (page title, body html)."""
+def to_html(md: str, hooks: dict | None = None) -> tuple[str, str]:
+    """Return (page title, body html).
+
+    ``hooks`` maps a marker line -- an HTML comment the Markdown source carries,
+    invisible wherever the Markdown itself is read -- to a callable returning the
+    HTML to splice in. It is how the report gets its replay widget and the essay
+    gets its interval figures, without either one teaching this renderer about
+    what it is rendering.
+    """
+    hooks = hooks or {}
     lines = md.splitlines()
     title = "Sepsis Early Warning"
     parts: list[str] = []
@@ -103,10 +111,34 @@ def to_html(md: str) -> tuple[str, str]:
             i += 1
             continue
 
-        if stripped == "<!-- replay -->":
+        if stripped in hooks:
             flush()
-            parts.append(replay_widget())
+            parts.append(hooks[stripped]())
             i += 1
+            continue
+
+        # Lists. Kept deliberately flat: one level, no nesting, because nothing
+        # this renders needs more and a half-supported feature is worse than an
+        # absent one.
+        bullet = re.match(r"^[-*]\s+(.*)$", stripped)
+        number = re.match(r"^(\d+)\.\s+(.*)$", stripped)
+        if bullet or number:
+            flush()
+            tag = "ul" if bullet else "ol"
+            items = []
+            while i < len(lines):
+                line_s = lines[i].strip()
+                m = re.match(r"^[-*]\s+(.*)$" if bullet else r"^\d+\.\s+(.*)$", line_s)
+                if m:
+                    items.append(m.group(1))
+                    i += 1
+                elif line_s and items and not line_s.startswith(("#", "|", "<!--")):
+                    items[-1] += " " + line_s  # a wrapped continuation line
+                    i += 1
+                else:
+                    break
+            body = "".join(f"<li>{inline(t)}</li>" for t in items)
+            parts.append(f"<{tag}>{body}</{tag}>")
             continue
 
         if stripped.startswith("|"):
@@ -963,7 +995,7 @@ def replay_widget() -> str:
 
 def build() -> Path:
     md = (REPORTS / "REPORT.md").read_text()
-    title, body = to_html(md)
+    title, body = to_html(md, hooks={"<!-- replay -->": replay_widget})
 
     page = f"""<title>Sepsis Early Warning</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

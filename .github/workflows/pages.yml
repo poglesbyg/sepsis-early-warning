@@ -39,7 +39,9 @@ jobs:
       - name: Check the committed inputs are present
         run: |
           missing=0
-          for f in reports/REPORT.md reports/replay.json reports/metrics.json; do
+          for f in reports/REPORT.md reports/replay.json reports/metrics.json \
+                   docs/writing/two-boundaries.md \
+                   reports/experiment_unit_transfer.csv reports/experiment_mechanism.json; do
             [ -f "$f" ] || { echo "::error::$f is missing; the report cannot be built"; missing=1; }
           done
           figures=$(ls reports/figures/*.png 2>/dev/null | wc -l)
@@ -50,14 +52,17 @@ jobs:
           [ "$missing" = "0" ] || exit 1
           echo "inputs present: $figures figures"
 
-      - name: Build the report
-        run: python scripts/build_html_report.py
+      - name: Build the pages
+        run: |
+          python scripts/build_html_report.py
+          python scripts/build_essay.py
 
       - name: Stage the site
         run: |
-          mkdir -p site
+          mkdir -p site/threshold
           cp reports/report.html site/index.html
-          echo "published $(du -h site/index.html | cut -f1)"
+          cp reports/essay.html site/threshold/index.html
+          echo "report $(du -h site/index.html | cut -f1), essay $(du -h site/threshold/index.html | cut -f1)"
 
       - uses: actions/configure-pages@v5
 

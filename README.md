@@ -243,7 +243,9 @@ The interval excludes zero and sits against it: direction established, size not.
 model that cannot see ordering behaviour is *worse at home and better away*.
 
 The whole argument, written for a general technical reader:
-[**the essay**](https://claude.ai/code/artifact/1678e300-67ce-4357-9459-00ec83fc7525) ([Markdown source](docs/writing/two-boundaries.md)).
+[**the essay**](https://poglesbyg.github.io/sepsis-early-warning/threshold/) — its
+interval figures are generated from the same committed artifacts as every other
+number here ([Markdown source](docs/writing/two-boundaries.md)).
 
 Four claims in the first draft of that essay did not survive an independent
 cross-model review, and the corrections are recorded in

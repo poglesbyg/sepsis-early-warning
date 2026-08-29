@@ -5,6 +5,7 @@
 # Regenerable from REPORT.md + figures via `make html`; 700 KB of inlined base64
 # that would rewrite itself on every run.
 /reports/report.html
+/reports/essay.html
 
 .venv/
 __pycache__/

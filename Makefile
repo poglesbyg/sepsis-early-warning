@@ -35,8 +35,9 @@ experiments: ## leakage, feature-block ablation and the two shift experiments
 card:       ## regenerate MODEL_CARD.md, with performance broken out by subgroup
 	$(PY) -m sepsis.cli card
 
-html:       ## render reports/REPORT.md as a single self-contained HTML page
+html:       ## render the report and the essay as self-contained HTML pages
 	$(PY) scripts/build_html_report.py
+	$(PY) scripts/build_essay.py
 
 all:        ## the whole pipeline, end to end
 	$(PY) -m sepsis.cli all
