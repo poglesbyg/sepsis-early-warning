@@ -184,57 +184,73 @@ rather than in a footnote.
 
 ## Two boundaries, two different failure modes
 
-"It doesn't generalise" is not one finding. The repository crosses two boundaries
-and measures them separately, and they break in opposite ways.
+"It doesn't generalise" is not one finding. This repository crosses two boundaries
+and measures them separately, and they fail in different places.
 
-**Hospital A to hospital B.** The utility gap is 0.130 (95% CI 0.066–0.182) at a
-threshold frozen on hospital A's validation split. Hospital B's admissions are
-then reweighted to hospital A's baseline case mix — age, sex, unit, early vitals,
-and how much lab work was ordered in the first six hours — by a trimmed propensity
-density ratio, which cuts mean covariate imbalance from 0.220 to 0.075 |SMD| while
-retaining an effective 53% of 20,000 admissions.
+**MICU to SICU.** Train on medical ICU admissions, test on surgical ICU admissions
+in the same hospital. Direction fixed in advance; admissions with no recorded unit
+form a third bucket rather than disappearing. Every bucket is split again, so no
+threshold is ever graded on the admissions it was chosen from.
 
-| hospital B | septic admissions | AUROC | utility |
-|---|---|---|---|
-| as observed | 5.7% | 0.787 | 0.295 |
-| reweighted to A's case mix | 6.7% | 0.786 | 0.312 |
-| *hospital A, for reference* | *8.8%* | *0.823* | *0.424* |
-
-**Measured case mix accounts for +0.017 of the 0.130 gap, and that component is
-not separable from zero** (95% CI −0.004 to +0.042). Re-picking the threshold on
-hospital B recovers another 5%. So neither of the two comfortable explanations —
-different patients, stale operating point — survives contact with the numbers.
-What is left is either genuine degradation or a difference the 17 covariates do
-not capture, which is why the residual is reported as an upper bound on
-degradation rather than a measurement of it.
-
-**MICU to SICU.** Train on medical ICU admissions, test on surgical ICU
-admissions in the same hospital. Direction fixed in advance; admissions with no
-recorded unit form a third bucket rather than disappearing.
-
-| cohort | admissions | septic | AUROC (95% CI) | utility, A's threshold | utility, retuned |
+| cohort | admissions | septic | AUROC (95% CI) | utility, MICU threshold | utility, local threshold |
 |---|---|---|---|---|---|
-| MICU, held out | 1,137 | 10.8% | 0.805 (0.779–0.835) | 0.458 | 0.459 |
-| SICU | 4,650 | 4.0% | 0.781 (0.748–0.818) | **0.042** | 0.299 |
-| unit not recorded | 8,090 | 10.4% | 0.785 (0.773–0.798) | 0.380 | 0.396 |
+| MICU, held out | 1,137 | 10.8% | 0.805 (0.779–0.835) | 0.469 | 0.467 |
+| SICU | 4,650 | 4.0% | 0.781 (0.748–0.818) | **0.088** (−0.059 to 0.188) | 0.408 |
+| unit not recorded | 8,090 | 10.4% | 0.785 (0.773–0.798) | 0.377 | 0.381 |
 
-**Discrimination survives the boundary — the confidence intervals overlap — and
-the deployed configuration still loses 91% of its value.** The septic rate is
-10.8% in the MICU and 4.0% in the SICU, and a threshold tuned where sepsis is
-common fires far too often where it is rare. Retuning that one number recovers
-most of it, without retraining and without new labels.
+**The model's behaviour barely changes across the boundary. Its deployed value
+collapses anyway.** Mean predicted risk is 0.342 in the MICU and 0.335 in the SICU;
+it alerts on 76% and 75% of admissions respectively, at the same threshold. The
+AUROC difference is +0.024 with a 95% interval of −0.013 to +0.063 — an independent
+two-sample bootstrap, since the cohorts are different patients and DeLong assumes
+they are not — so this experiment does not establish a ranking loss.
 
-Put side by side: across hospitals the model's scores degrade and its threshold
-is fine; across units the scores transfer and the threshold is catastrophic. A
-single "external AUROC" column would have shown neither. The largest bucket in
-the unit experiment is also the one with no unit recorded at all — dropping it
-would have made the transfer claim cleaner and the cohort unrepresentative of the
-hospital it came from.
+Utility at the transferred threshold has an interval of −0.059 to 0.188, which
+**includes zero**: not distinguishable from never alerting. Choosing a threshold on
+half the SICU and scoring it on the other half recovers +0.319 (95% CI +0.243 to
++0.444). Two caveats that matter: choosing a local threshold requires that unit's
+own labelled outcomes, so it is cheap but not free; and the normalised utility score
+has a cohort-specific, outcome-informed denominator, so part of the movement is the
+metric responding to a 4.0% septic rate against 10.8%.
 
-The experiment layer refits the champion configuration itself and scores raw
-booster output, so its absolute numbers sit slightly above the calibrated
-headline table. Each experiment is read as a contrast within itself, never as a
-competing performance claim.
+**Hospital A to hospital B.** The utility gap is 0.130 (95% CI 0.066–0.182).
+Reweighting hospital B's admissions to hospital A's baseline case mix — a trimmed
+propensity density ratio that cuts mean covariate imbalance from 0.220 to 0.075 |SMD|
+— accounts for **+0.017 of it, not separable from zero** (95% CI −0.004 to +0.042),
+and only +0.006 when the adjustment uses covariates fixed at admission rather than
+six hours of care process. Re-picking the threshold there buys about 5% of the gap.
+
+So across units the model transfers and the threshold does not; across hospitals the
+threshold transfers and something in the scores does not. These are two separately
+trained models on two cohorts, so they are two observations rather than an identified
+pair of orthogonal failure modes — but jointly they establish the useful part:
+**discrimination and the operating point can fail independently, and one AUROC column
+is insensitive to the second.**
+
+**Is it ordering behaviour?** The ablation below shows 109 features containing no
+measured value reaching 97% of full AUROC, which invites the explanation that the
+model reads clinical suspicion and suspicion does not travel. That story fits the
+numbers, so it is tested rather than repeated: two models on hospital A, identical
+but for those 109 features.
+
+| model | AUROC, hospital A | AUROC, hospital B | transfer gap |
+|---|---|---|---|
+| everything (345 features) | 0.823 | 0.787 | 0.036 |
+| no ordering behaviour (236) | 0.817 | 0.792 | 0.025 |
+
+Withholding ordering behaviour shrinks the gap by 0.011 (95% CI +0.0004 to +0.021).
+The interval excludes zero and sits against it: direction established, size not. The
+model that cannot see ordering behaviour is *worse at home and better away*.
+
+The whole argument, written for a general technical reader:
+[**the essay**](https://claude.ai/code/artifact/1678e300-67ce-4357-9459-00ec83fc7525) ([Markdown source](docs/writing/two-boundaries.md)).
+
+Four claims in the first draft of that essay did not survive an independent
+cross-model review, and the corrections are recorded in
+[`DECISIONS.md`](DECISIONS.md) rather than quietly folded in. The experiment layer
+refits the champion configuration itself and scores raw booster output, so its
+absolute numbers sit slightly above the calibrated headline table; each experiment
+is read as a contrast within itself.
 
 ---
 
@@ -553,6 +569,7 @@ src/sepsis/
     ├── leakage.py         what the two classic mistakes are worth
     ├── ablation.py        what each feature block buys
     ├── prevalence.py      case mix vs. degradation, hospital A → B
+    ├── mechanism.py       is ordering behaviour what fails to transfer?
     └── unit_transfer.py   MICU → SICU, with the unrecorded-unit bucket
 ```
 
@@ -563,7 +580,7 @@ src/sepsis/
 ```bash
 make setup      # uv venv on Python 3.12 + install
 make all        # ~35 min end to end on a laptop CPU (22 of it Optuna)
-make test       # 151 tests, ~6 s
+make test       # 157 tests, ~6 s
 make regress    # every published number still where the baseline left it
 ```
 
