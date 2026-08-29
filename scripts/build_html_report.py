@@ -226,6 +226,7 @@ CSS = """
   --flag:       #b33a1f;
   --stable:     #2f7d5c;
   --shadow:     0 1px 2px rgba(22,35,43,.06), 0 8px 24px -16px rgba(22,35,43,.28);
+  --plate-dim:  none;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -241,6 +242,7 @@ CSS = """
     --flag:       #e0714f;
     --stable:     #5fb58c;
     --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+    --plate-dim:  brightness(.86);
   }
 }
 :root[data-theme="dark"] {
@@ -256,6 +258,7 @@ CSS = """
   --flag:       #e0714f;
   --stable:     #5fb58c;
   --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+  --plate-dim:  brightness(.86);
 }
 
 * { box-sizing: border-box; }
@@ -466,8 +469,12 @@ tbody td strong { color: var(--signal); font-weight: 600; }
   display: block;
   width: 100%;
   height: auto;
-  /* matplotlib renders on white; on the dark ground a plain PNG glares. */
-  background: #fff;
+  /* The figures are opaque white PNGs, so on the dark ground they arrive as nine
+     lit slabs. Dimming them is a viewing accommodation and nothing more: the fix
+     would be theme-neutral plots, which is a change to matplotlib output rather
+     than to CSS. Carried on a token so the value resolves in all three theme
+     states, including the un-stamped one. */
+  filter: var(--plate-dim);
 }
 .plate figcaption {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
