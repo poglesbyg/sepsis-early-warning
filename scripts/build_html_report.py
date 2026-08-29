@@ -218,7 +218,7 @@ CSS = """
   --surface:    #ffffff;
   --ink:        #16232b;
   --ink-soft:   #4a5b64;
-  --ink-faint:  #7d8e97;
+  --ink-faint:  #5d6f79;
   --rule:       #d3dbdf;
   --rule-soft:  #e6ebed;
   --signal:     #0f6d8c;

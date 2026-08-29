@@ -156,7 +156,7 @@ def figures() -> dict[str, object]:
 CSS = """
 :root {
   --paper:#f2f5f6; --surface:#ffffff; --ink:#14212a; --ink-soft:#45565f;
-  --ink-faint:#7b8c95; --rule:#d5dde1; --rule-soft:#e6ecee;
+  --ink-faint:#5d6f79; --rule:#d5dde1; --rule-soft:#e6ecee;
   --signal:#0f6d8c; --flag:#b33a1f; --stable:#2f7d5c;
 }
 @media (prefers-color-scheme: dark) {
