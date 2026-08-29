@@ -481,3 +481,77 @@ def test_unit_indicators_are_excluded_from_the_transfer_feature_set():
     used = transfer_features(frame)
     assert not set(UNIT_COLUMNS) & set(used)
     assert len(used) == len(feature_columns(frame)) - len(UNIT_COLUMNS)
+
+
+# --------------------------------------------------------------------------
+# A local threshold must be held out from the set it is scored on
+# --------------------------------------------------------------------------
+def test_local_threshold_may_not_be_graded_on_its_own_selection_set():
+    """The mistake the first version of the unit experiment published.
+
+    Choosing a threshold to maximise utility and then reporting that utility on
+    the same admissions reports the maximum of a sweep as though it were a
+    measurement. Nothing else in the pipeline notices.
+    """
+    from sepsis.experiments.unit_transfer import _assert_local_threshold_is_held_out
+
+    _assert_local_threshold_is_held_out(["a", "b"], ["c", "d"], "SICU")
+    with pytest.raises(ValueError, match="own selection set"):
+        _assert_local_threshold_is_held_out(["a", "b"], ["b", "c"], "SICU")
+
+
+def test_utility_bootstrap_pairs_the_two_thresholds():
+    """Both operating points are scored on the same resampled admissions.
+
+    Resampling twice would widen the interval on their difference for no reason
+    and could hide a real gain.
+    """
+    from sepsis.evaluate.metrics import UtilityScorer
+    from sepsis.experiments.unit_transfer import _utility_on
+
+    frame = _toy_stays(n_patients=30, n_hours=25)
+    rng = np.random.default_rng(0)
+    scores = rng.random(len(frame))
+    eval_ids = set(frame["patient_id"].unique()[:20])
+
+    out = _utility_on(frame, scores, eval_ids, frozen=0.9, local=0.5, seed=0, n_boot=40)
+    assert out["utility_frozen_lo"] <= out["utility_frozen"] <= out["utility_frozen_hi"]
+    assert out["utility_local_lo"] <= out["utility_local"] <= out["utility_local_hi"]
+    # A paired interval on the gain must be narrower than the two marginals summed.
+    gain_width = out["gain_hi"] - out["gain_lo"]
+    marginal = (out["utility_frozen_hi"] - out["utility_frozen_lo"]) + (
+        out["utility_local_hi"] - out["utility_local_lo"]
+    )
+    assert gain_width < marginal
+
+
+# --------------------------------------------------------------------------
+# The mechanism experiment's arms must differ in exactly one thing
+# --------------------------------------------------------------------------
+def test_mechanism_arms_partition_the_feature_matrix():
+    from sepsis.experiments.mechanism import _assert_subsets
+
+    _assert_subsets(["a", "b"], ["c"], ["a", "b", "c"])
+
+
+def test_mechanism_rejects_overlapping_arms():
+    with_msg = "differ in more than one thing"
+    from sepsis.experiments.mechanism import _assert_subsets
+
+    with pytest.raises(ValueError, match=with_msg):
+        _assert_subsets(["a", "b"], ["b", "c"], ["a", "b", "c"])
+
+
+def test_mechanism_rejects_a_feature_in_neither_arm():
+    from sepsis.experiments.mechanism import _assert_subsets
+
+    with pytest.raises(ValueError, match="belong to neither arm"):
+        _assert_subsets(["a"], ["b"], ["a", "b", "c"])
+
+
+def test_mechanism_rejects_an_empty_ordering_set():
+    """With nothing withheld the experiment compares a model to itself."""
+    from sepsis.experiments.mechanism import _assert_subsets
+
+    with pytest.raises(ValueError, match="compare a model to itself"):
+        _assert_subsets([], ["a", "b"], ["a", "b"])

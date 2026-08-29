@@ -1,0 +1,14 @@
+{
+  "n_ordering_features": 109,
+  "n_physiology_features": 236,
+  "transfer_gap_with_ordering": 0.036074119847089525,
+  "transfer_gap_without_ordering": 0.025356913305741857,
+  "gap_difference": 0.010717206541347668,
+  "gap_difference_ci": [
+    0.00035728705304842207,
+    0.0205189348725586
+  ],
+  "mechanism_supported": true,
+  "noise_floor": 0.005,
+  "n_boot": 200
+}

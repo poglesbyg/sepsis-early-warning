@@ -483,3 +483,100 @@ The card says so, rather than reporting the first number alone.
 PhysioNet/CinC 2019 carries no race, ethnicity, insurance status, language or
 calendar time. The card says these cannot be assessed rather than omitting the
 subject, because silence on a fairness axis reads as a clean bill of health.
+
+---
+
+## Corrections found by cross-model review
+
+An independent review (Codex, codex-cli 0.148.0) was run against the write-up
+before it was posted, with the repository available to check its claims. It found
+four things an in-house review had not. They are recorded here rather than quietly
+fixed, because the failure modes are more general than this project.
+
+### A locally chosen threshold must be held out from the set it is scored on
+
+The first version of the unit-transfer experiment chose a threshold on the SICU
+cohort to maximise utility, then reported that utility on the same admissions. That
+is the maximum of a sweep presented as a measurement, and it inflated the headline
+recovery number.
+
+Every evaluation bucket is now split in half: one half selects the local threshold,
+the other scores it. `_assert_local_threshold_is_held_out` raises if they ever
+overlap. The validity check is that the same procedure applied to the MICU bucket —
+where the frozen threshold was already tuned — produces a gain whose interval spans
+zero, as it must.
+
+**Rejected:** reporting the in-sample number with a caveat. A caveat does not stop
+the number being quoted.
+
+### Choosing a local threshold is not free, and the write-up said it was
+
+Utility is optimised against labelled outcomes, so re-picking a threshold at a new
+site requires that site's own labelled sepsis outcomes. An earlier draft described
+this as needing "no retraining, no new labels." The first half is true; the second
+is false, and it was the most quotable sentence in the piece.
+
+### Overlapping confidence intervals are not a test of equivalence
+
+Two marginal intervals overlapping does not establish that two AUROCs are equal, and
+the original claim that discrimination "survives intact" across the unit boundary
+rested on exactly that. The experiment now computes an interval on the *difference*.
+
+Because the two cohorts are different patients rather than two scores on the same
+rows, DeLong does not apply; an independent two-sample cluster bootstrap does. The
+difference is +0.0236 with a 95% interval of −0.0133 to +0.0635. The honest statement
+is that this experiment does not establish a ranking loss, which is not the same as
+showing there is none.
+
+### The normalised utility score is prevalence-sensitive by construction
+
+Its denominator is a cohort-specific, outcome-informed oracle — alert wherever the
+realised per-hour utility increment is positive. Under a changed septic rate the
+ratio can move sharply even when the model's behaviour barely changes, which is
+exactly what the unit experiment shows: mean predicted risk and alerted-admission
+rate are nearly identical across the boundary while normalised utility collapses.
+
+Reporting that collapse as "the model lost 91% of its clinical value" implies a
+prevalence-invariant measure of deployable benefit that this score is not. The
+experiment now reports the score-distribution diagnostics beside the utility so a
+reader can see which part moved.
+
+---
+
+## The mechanism claim is tested, not asserted
+
+The ablation result — 109 features containing no measured value reach 97% of the full
+matrix's AUROC — invites the explanation that the model transfers poorly because it
+is reading ordering behaviour, and charting habits differ between hospitals. That
+explanation fits the numbers, which is what makes it dangerous.
+
+`experiments/mechanism.py` tests it: two models on hospital A, identical but for the
+109 withheld features, both scored at both hospitals. The transfer gap is 0.0361 with
+ordering behaviour and 0.0254 without, a difference of +0.0107 (95% CI +0.0004 to
++0.0205). The interval excludes zero but is tight against it, so the direction is
+established and the size is not.
+
+The model without ordering features scores *lower* at hospital A and *higher* at
+hospital B. Those features are real signal about a real thing, and they are part of
+what does not travel.
+
+**Rejected:** leaving the explanation as prose in the report. A story that fits the
+numbers and is never tested is indistinguishable from one that is true, right up
+until someone tests it.
+
+### The prevalence estimand is reported with its sensitivity
+
+The pre-registered specification reweights hospital B to hospital A's *training*
+split, while the comparison is against A's *test* utility. That is a hybrid, and the
+covariate list includes six hours of early vitals and ordering volume, which are care
+process rather than admission characteristics and are plausibly mediators of the site
+difference being adjusted for.
+
+Both alternatives are now computed and reported beside the pre-registered number:
+matching to A's test split gives +0.021; using only covariates fixed at admission
+gives +0.006 against the pre-registered +0.017. The case-mix component is small under
+every specification, and it is smallest under the most conservative one.
+
+**Rejected:** changing the pre-registered estimand after seeing the result. The
+specification stands as written and the alternatives are reported next to it. A
+number that moves when a defensible choice moves belongs in the open as a range.

@@ -10,10 +10,31 @@
   ],
   "auroc_home": 0.8046459476513681,
   "auroc_sicu": 0.7810050569822347,
-  "auroc_drop": 0.02364089066913344,
-  "utility_home": 0.45791475335943893,
-  "utility_sicu": 0.041915346588244105,
-  "utility_sicu_retuned": 0.29924764550932775,
+  "auroc_difference": 0.02364089066913344,
+  "auroc_difference_ci": [
+    -0.013342385635031012,
+    0.06345282252899791
+  ],
+  "utility_home": 0.4686798771978789,
+  "utility_sicu": 0.08840517395822133,
+  "utility_sicu_ci": [
+    -0.05916140371550245,
+    0.188329806673337
+  ],
+  "utility_sicu_local": 0.4076892758608334,
+  "utility_sicu_local_ci": [
+    0.3196451427208185,
+    0.5001918612511919
+  ],
+  "local_threshold_gain": 0.3192841019026121,
+  "local_threshold_gain_ci": [
+    0.24325828398594043,
+    0.44392720595167867
+  ],
+  "alerted_admissions_pct_home": 75.72559366754618,
+  "alerted_admissions_pct_sicu": 74.58064516129032,
+  "mean_score_home": 0.3415421896704892,
+  "mean_score_sicu": 0.3351529421274298,
   "prevalence_home": 10.817941952506596,
   "prevalence_sicu": 4.0,
   "n_boot": 200

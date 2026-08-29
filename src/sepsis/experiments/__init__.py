@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Callable
 
 from .common import ExperimentResult, assert_partition, block_columns, fit_and_score
-from . import ablation, leakage, prevalence, unit_transfer
+from . import ablation, leakage, mechanism, prevalence, unit_transfer
 
 # Explicit, ordered, greppable. Report sections appear in this order.
 REGISTRY: dict[str, Callable[..., ExperimentResult]] = {
@@ -23,6 +23,7 @@ REGISTRY: dict[str, Callable[..., ExperimentResult]] = {
     "ablation": ablation.run,
     "prevalence": prevalence.run,
     "unit_transfer": unit_transfer.run,
+    "mechanism": mechanism.run,
 }
 
 __all__ = [

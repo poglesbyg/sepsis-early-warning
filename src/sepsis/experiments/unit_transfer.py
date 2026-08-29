@@ -38,6 +38,7 @@ from ..evaluate.metrics import UtilityScorer, cluster_bootstrap_ci
 from ..features.builder import feature_columns
 from .common import (
     ExperimentResult,
+    admission_utility_parts,
     assert_contiguous_admissions,
     fit_booster,
     predict,
@@ -99,17 +100,35 @@ def run(
     }
     _assert_no_overlap(fit_ids, thr_ids, evaluation)
 
+    # Every evaluation bucket is split again: half to choose a local threshold on,
+    # half to score it. Choosing a threshold on the same admissions it is then
+    # graded on reports the maximum of a sweep as though it were a result, which
+    # is the mistake this repository exists to argue against -- and the first
+    # version of this experiment made it.
     rows = []
     for name, ids in evaluation.items():
-        rows.append(_score_bucket(booster, pool, ids, features, threshold, name, seed, n_boot))
-        log(f"{name}: AUROC {rows[-1]['auroc']:.4f}, utility {rows[-1]['utility_frozen']:.4f} "
-            f"(prevalence {rows[-1]['septic_admissions_pct']:.1f}%)")
+        rows.append(
+            _score_bucket(booster, pool, ids, features, threshold, name, labels, seed, n_boot)
+        )
+        r = rows[-1]
+        log(f"{name}: AUROC {r['auroc']:.4f} | utility frozen {r['utility_frozen']:.4f}, "
+            f"local {r['utility_local']:.4f} (prevalence {r['septic_admissions_pct']:.1f}%)")
 
     table = pd.DataFrame(rows)
     _assert_scored(table)
 
     home, sicu, unknown = table.iloc[0], table.iloc[1], table.iloc[2]
-    prose = _prose(home, sicu, unknown, threshold, len(fit_ids), n_boot)
+
+    # MICU and SICU are disjoint cohorts, so the AUROC difference is unpaired and
+    # DeLong does not apply. An independent two-sample cluster bootstrap does.
+    auroc_diff_ci = _auroc_difference_ci(
+        booster, pool, evaluation["MICU (held out, same unit)"],
+        buckets["unit_sicu"], features, seed=seed, n_boot=n_boot,
+    )
+    log(f"AUROC difference MICU - SICU: {home['auroc'] - sicu['auroc']:+.4f} "
+        f"(95% CI {auroc_diff_ci[0]:+.4f} to {auroc_diff_ci[1]:+.4f})")
+
+    prose = _prose(home, sicu, unknown, threshold, len(fit_ids), n_boot, auroc_diff_ci)
 
     return ExperimentResult(
         name="unit_transfer",
@@ -124,10 +143,19 @@ def run(
             "excluded_features": UNIT_COLUMNS,
             "auroc_home": float(home["auroc"]),
             "auroc_sicu": float(sicu["auroc"]),
-            "auroc_drop": float(home["auroc"] - sicu["auroc"]),
+            "auroc_difference": float(home["auroc"] - sicu["auroc"]),
+            "auroc_difference_ci": auroc_diff_ci,
             "utility_home": float(home["utility_frozen"]),
             "utility_sicu": float(sicu["utility_frozen"]),
-            "utility_sicu_retuned": float(sicu["utility_retuned"]),
+            "utility_sicu_ci": [float(sicu["utility_frozen_lo"]), float(sicu["utility_frozen_hi"])],
+            "utility_sicu_local": float(sicu["utility_local"]),
+            "utility_sicu_local_ci": [float(sicu["utility_local_lo"]), float(sicu["utility_local_hi"])],
+            "local_threshold_gain": float(sicu["utility_local"] - sicu["utility_frozen"]),
+            "local_threshold_gain_ci": [float(sicu["gain_lo"]), float(sicu["gain_hi"])],
+            "alerted_admissions_pct_home": float(home["alerted_admissions_pct"]),
+            "alerted_admissions_pct_sicu": float(sicu["alerted_admissions_pct"]),
+            "mean_score_home": float(home["mean_score"]),
+            "mean_score_sicu": float(sicu["mean_score"]),
             "prevalence_home": float(home["septic_admissions_pct"]),
             "prevalence_sicu": float(sicu["septic_admissions_pct"]),
             "n_boot": n_boot,
@@ -154,19 +182,35 @@ def _freeze_threshold(booster, pool, ids, features) -> float:
     return threshold
 
 
-def _score_bucket(booster, pool, ids, features, threshold, name, seed, n_boot) -> dict:
+def _score_bucket(booster, pool, ids, features, threshold, name, labels, seed, n_boot) -> dict:
+    """One bucket, scored honestly.
+
+    AUROC uses the whole bucket: it is threshold-free, so nothing is spent by
+    computing it on everything. The utilities use only the evaluation half,
+    because the local threshold is chosen on the other half and a threshold graded
+    on its own selection set is a maximum, not a measurement.
+    """
     frame = pool[pool["patient_id"].isin(set(ids))]
     y = frame["SepsisLabel"].to_numpy()
     groups = frame["patient_id"].to_numpy()
     scores = predict(booster, frame, features)
 
-    scorer = UtilityScorer(y, groups)
     _, lo, hi = cluster_bootstrap_ci(y, scores, groups, n_boot=n_boot, seed=seed)
-    _, retuned = scorer.best_threshold(scores)
+
+    tune_ids, eval_ids = train_test_split(
+        ids, test_size=0.5, random_state=seed, stratify=labels.reindex(ids).to_numpy()
+    )
+    _assert_local_threshold_is_held_out(tune_ids, eval_ids, name)
+    local = _local_threshold(frame, scores, set(tune_ids))
+    evaluated = _utility_on(frame, scores, set(eval_ids), threshold, local, seed, n_boot)
+
+    alerts = scores >= threshold
+    alerted = pd.Series(alerts, index=groups).groupby(level=0, sort=False).any()
 
     return {
         "cohort": name,
         "n_admissions": int(len(ids)),
+        "n_eval_admissions": int(len(eval_ids)),
         "n_hours": int(len(frame)),
         "septic_admissions_pct": 100 * float(
             pd.Series(y).groupby(pd.Series(groups), observed=True).max().mean()
@@ -174,9 +218,106 @@ def _score_bucket(booster, pool, ids, features, threshold, name, seed, n_boot) -
         "auroc": float(roc_auc_score(y, scores)),
         "auroc_lo": float(lo),
         "auroc_hi": float(hi),
-        "utility_frozen": scorer.score((scores >= threshold).astype(np.float64)),
-        "utility_retuned": float(retuned),
+        # Score-distribution diagnostics for the same model the utilities come
+        # from. Borrowing them from a different model, as an earlier draft of the
+        # write-up did, describes a different system.
+        "mean_score": float(scores.mean()),
+        "alert_hours_pct": 100 * float(alerts.mean()),
+        "alerted_admissions_pct": 100 * float(alerted.mean()),
+        "local_threshold": local,
+        **evaluated,
     }
+
+
+def _local_threshold(frame: pd.DataFrame, scores: np.ndarray, tune_ids: set) -> float:
+    """The threshold a site would pick for itself, chosen on the tuning half only.
+
+    Choosing it requires this unit's own labelled outcomes. That is not a free
+    operation and the write-up must not describe it as one.
+    """
+    mask = frame["patient_id"].isin(tune_ids).to_numpy()
+    sub = frame[mask]
+    scorer = UtilityScorer(sub["SepsisLabel"].to_numpy(), sub["patient_id"].to_numpy())
+    threshold, _ = scorer.best_threshold(scores[mask])
+    return float(threshold)
+
+
+def _utility_on(frame, scores, eval_ids, frozen, local, seed, n_boot) -> dict:
+    """Both operating points on the held-out half, with paired intervals.
+
+    The two thresholds are scored on the same admissions, so the bootstrap
+    resamples once per replicate and evaluates both. An unpaired interval on the
+    difference would be wider for no reason.
+    """
+    mask = frame["patient_id"].isin(eval_ids).to_numpy()
+    sub, sub_scores = frame[mask], scores[mask]
+    y, groups = sub["SepsisLabel"].to_numpy(), sub["patient_id"].to_numpy()
+    scorer = UtilityScorer(y, groups)
+
+    parts = {
+        key: admission_utility_parts(scorer, (sub_scores >= t).astype(float), groups)
+        for key, t in (("frozen", frozen), ("local", local))
+    }
+    point = {k: float(v["num"].sum() / v["den"].sum()) for k, v in parts.items()}
+
+    rng = np.random.default_rng(seed)
+    n = len(parts["frozen"])
+    draws = {"frozen": np.empty(n_boot), "local": np.empty(n_boot), "gain": np.empty(n_boot)}
+    for b in range(n_boot):
+        counts = rng.multinomial(n, np.full(n, 1 / n)).astype(float)
+        vals = {
+            k: float(counts @ v["num"].to_numpy() / (counts @ v["den"].to_numpy()))
+            for k, v in parts.items()
+        }
+        draws["frozen"][b], draws["local"][b] = vals["frozen"], vals["local"]
+        draws["gain"][b] = vals["local"] - vals["frozen"]
+
+    ci = {k: np.nanpercentile(v, [2.5, 97.5]) for k, v in draws.items()}
+    return {
+        "utility_frozen": point["frozen"],
+        "utility_frozen_lo": float(ci["frozen"][0]),
+        "utility_frozen_hi": float(ci["frozen"][1]),
+        "utility_local": point["local"],
+        "utility_local_lo": float(ci["local"][0]),
+        "utility_local_hi": float(ci["local"][1]),
+        "gain_lo": float(ci["gain"][0]),
+        "gain_hi": float(ci["gain"][1]),
+    }
+
+
+def _auroc_difference_ci(booster, pool, home_ids, sicu_ids, features, seed, n_boot) -> list[float]:
+    """Interval on the AUROC difference between two disjoint cohorts.
+
+    DeLong assumes both scores are computed on the same rows, which is exactly
+    what these are not: different patients in different units. Each cohort is
+    resampled independently at the admission level and the difference recomputed,
+    which is the unpaired analogue.
+    """
+    cohorts = []
+    for ids in (home_ids, sicu_ids):
+        frame = pool[pool["patient_id"].isin(set(ids))]
+        scores = predict(booster, frame, features)
+        cohorts.append(
+            pd.DataFrame({
+                "patient_id": frame["patient_id"].to_numpy(),
+                "y": frame["SepsisLabel"].to_numpy(),
+                "score": scores,
+            })
+        )
+
+    rng = np.random.default_rng(seed)
+    draws = np.empty(n_boot)
+    grouped = [list(c.groupby("patient_id", observed=True, sort=False)) for c in cohorts]
+    for b in range(n_boot):
+        aurocs = []
+        for stays in grouped:
+            picks = rng.integers(0, len(stays), size=len(stays))
+            sample = pd.concat([stays[i][1] for i in picks], ignore_index=True)
+            y = sample["y"].to_numpy()
+            aurocs.append(roc_auc_score(y, sample["score"]) if 0 < y.sum() < len(y) else np.nan)
+        draws[b] = aurocs[0] - aurocs[1]
+    lo, hi = np.nanpercentile(draws, [2.5, 97.5])
+    return [float(lo), float(hi)]
 
 
 # --------------------------------------------------------------------------
@@ -220,6 +361,23 @@ def _assert_no_overlap(fit_ids, thr_ids, evaluation: dict[str, np.ndarray]) -> N
             )
 
 
+def _assert_local_threshold_is_held_out(tune_ids, eval_ids, bucket: str) -> None:
+    """The half a local threshold is chosen on may not be the half it is scored on.
+
+    Without this, ``utility_local`` is the maximum of a sweep over the same
+    admissions it is reported on -- an optimistic number that looks like a
+    measured recovery. The first version of this experiment published exactly
+    that, and nothing in the pipeline noticed.
+    """
+    overlap = set(tune_ids) & set(eval_ids)
+    if overlap:
+        raise ValueError(
+            f"{bucket}: {len(overlap)} admissions are in both the threshold-selection "
+            f"and evaluation halves; the local threshold would be graded on its own "
+            f"selection set"
+        )
+
+
 def _assert_scored(table: pd.DataFrame) -> None:
     """A bucket with no septic admission cannot be scored, and a below-chance AUROC
     on a real bucket means the cohort was assembled wrongly rather than that the
@@ -235,36 +393,56 @@ def _assert_scored(table: pd.DataFrame) -> None:
         )
 
 
-def _prose(home, sicu, unknown, threshold, n_fit, n_boot) -> str:
-    auroc_drop = home["auroc"] - sicu["auroc"]
-    overlap = sicu["auroc_hi"] >= home["auroc_lo"] and home["auroc_hi"] >= sicu["auroc_lo"]
+def _prose(home, sicu, unknown, threshold, n_fit, n_boot, auroc_diff_ci) -> str:
+    diff = home["auroc"] - sicu["auroc"]
+    separable = auroc_diff_ci[0] > 0
+    gain = sicu["utility_local"] - sicu["utility_frozen"]
+    gain_real = sicu["gain_lo"] > 0
+
     discrimination = (
-        "the two intervals overlap, so discrimination is not measurably worse across "
-        "the unit boundary"
-        if overlap
-        else "the intervals are disjoint, so discrimination is measurably worse across "
-             "the unit boundary"
+        f"the interval on that difference excludes zero, so ranking is measurably "
+        f"worse in the surgical unit, though by an amount ({diff:.3f} AUROC) that "
+        f"no operating point would notice"
+        if separable
+        else f"the interval on that difference spans zero, so this experiment does "
+             f"not establish a ranking loss across the unit boundary. That is not the "
+             f"same as showing there is none: with {sicu['n_admissions']:,} SICU "
+             f"admissions it is a statement about what this test could detect"
     )
-    threshold_cost = sicu["utility_retuned"] - sicu["utility_frozen"]
 
     return (
         f"Trained on {n_fit:,} medical ICU admissions and evaluated at a threshold "
         f"frozen on held-out MICU patients ({threshold:.3f}), the model scores AUROC "
         f"**{home['auroc']:.4f}** (95% CI {home['auroc_lo']:.4f} to "
-        f"{home['auroc_hi']:.4f}) on MICU admissions it has not seen, and "
+        f"{home['auroc_hi']:.4f}) on MICU admissions it has not seen and "
         f"**{sicu['auroc']:.4f}** ({sicu['auroc_lo']:.4f} to {sicu['auroc_hi']:.4f}) "
-        f"on surgical ICU admissions: a drop of {auroc_drop:+.4f}, and "
-        f"{discrimination}.\n\n"
-        f"Clinical utility tells a harsher story: {home['utility_frozen']:.4f} at home "
-        f"against **{sicu['utility_frozen']:.4f}** in the SICU. Most of that is not "
-        f"the model getting worse at ranking patients. The septic rate is "
-        f"{home['septic_admissions_pct']:.1f}% in the MICU and "
-        f"{sicu['septic_admissions_pct']:.1f}% in the SICU, and an alert threshold "
-        f"tuned where sepsis is common fires far too often where it is rare. Retuning "
-        f"the threshold on the SICU alone recovers {threshold_cost:+.4f} to "
-        f"{sicu['utility_retuned']:.4f} — that recovery is the price of shipping one "
-        f"operating point across a boundary the units do not share, and it is "
-        f"available in production by re-picking a threshold, without retraining.\n\n"
+        f"on surgical ICU admissions. The difference is {diff:+.4f} with a 95% "
+        f"interval of {auroc_diff_ci[0]:+.4f} to {auroc_diff_ci[1]:+.4f}, from an "
+        f"independent two-sample cluster bootstrap — DeLong does not apply here, "
+        f"because the two cohorts are different patients rather than two scores on "
+        f"the same rows. So {discrimination}.\n\n"
+        f"Clinical utility is a different story, and it is measured on a held-out "
+        f"half of each bucket so that no threshold is graded on the admissions it "
+        f"was chosen from. At the MICU threshold the model scores "
+        f"{home['utility_frozen']:.4f} at home against **{sicu['utility_frozen']:.4f}** "
+        f"in the SICU (95% CI {sicu['utility_frozen_lo']:.4f} to "
+        f"{sicu['utility_frozen_hi']:.4f}). Choosing a threshold on a separate half "
+        f"of the SICU and scoring it here recovers **{gain:+.4f}** to "
+        f"{sicu['utility_local']:.4f} (95% CI on the gain: {sicu['gain_lo']:+.4f} to "
+        f"{sicu['gain_hi']:+.4f}"
+        f"{', which excludes zero' if gain_real else ', which spans zero'}).\n\n"
+        f"Two cautions on reading that as a free fix. Choosing a local threshold "
+        f"requires this unit's own labelled outcomes — utility is optimised against "
+        f"them — so it costs local outcome data, not merely a sweep. And the "
+        f"normalised utility score has a cohort-specific, outcome-informed "
+        f"denominator, so part of the movement between units is the metric "
+        f"responding to a septic rate of {home['septic_admissions_pct']:.1f}% against "
+        f"{sicu['septic_admissions_pct']:.1f}%, not the model behaving differently. "
+        f"What the score distribution actually does across the boundary is directly "
+        f"visible: mean predicted risk {home['mean_score']:.4f} in the MICU against "
+        f"{sicu['mean_score']:.4f} in the SICU, alerting on "
+        f"{home['alerted_admissions_pct']:.0f}% against "
+        f"{sicu['alerted_admissions_pct']:.0f}% of admissions at the same threshold.\n\n"
         f"The third bucket is the one it would be convenient to omit: "
         f"{unknown['n_admissions']:,} admissions where neither unit indicator was "
         f"recorded — more than either named unit — scoring AUROC "

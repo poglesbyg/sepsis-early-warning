@@ -57,6 +57,11 @@
     "BUN_n_obs",
     "Platelets_n_obs"
   ],
+  "sensitivity": {
+    "pre_registered": 0.017441249260463754,
+    "reference_is_a_test": 0.020589356274447967,
+    "admission_time_covariates_only": 0.005581943198382788
+  },
   "trim_percentiles": [
     1.0,
     99.0

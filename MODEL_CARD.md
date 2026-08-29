@@ -136,21 +136,27 @@ have shown neither.
 - **Between hospitals**, utility falls by 0.130. Reweighting hospital
   B's admissions to hospital A's baseline case mix recovers
   +0.017 of that, with a confidence interval straddling
-  zero, and re-picking the threshold recovers about 5% more. Neither comfortable
+  zero — and only +0.006 when
+  the adjustment uses covariates fixed at admission rather than six hours of care
+  process. Re-picking the threshold recovers about 5% more. Neither comfortable
   explanation — different patients, stale operating point — survives contact with
   the numbers.
-- **Between units in one hospital**, discrimination survives intact (MICU
-  0.805 against SICU 0.781, overlapping
-  intervals) while utility at the frozen threshold collapses from
-  0.458 to 0.042. Retuning the threshold
-  alone recovers it to 0.299. The septic rate is
-  10.8% in the MICU and 4.0% in
-  the SICU, and a threshold tuned where sepsis is common fires far too often where
-  it is rare.
+- **Between units in one hospital**, the AUROC difference is
+  +0.024 (95% CI -0.013 to
+  +0.063), which does not establish a ranking loss,
+  while utility at the frozen threshold falls from 0.469 to
+  0.088 (95% CI -0.059 to
+  0.188). A threshold chosen on a separate half of the
+  SICU and scored on the remainder recovers it to 0.408.
+  The septic rate is 10.8% in the MICU and
+  4.0% in the SICU.
 
-**The practical reading: an operating point does not transfer, and it is cheap to
-fix.** Any new site or unit should re-pick its threshold on its own data before
-anything is switched on.
+**The practical reading: the operating point is what fails to transfer.** Any new
+site or unit should select its threshold on its own labelled outcomes before
+anything is switched on. That is not free — it requires local outcome data — but it
+requires no retraining, and the normalised utility score is itself prevalence-
+sensitive, so part of the movement between units is the metric responding to a
+different septic rate rather than the model behaving differently.
 
 ### What the model is actually using
 

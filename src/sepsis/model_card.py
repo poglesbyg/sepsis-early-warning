@@ -346,21 +346,27 @@ have shown neither.
 - **Between hospitals**, utility falls by {prev['gap']:.3f}. Reweighting hospital
   B's admissions to hospital A's baseline case mix recovers
   {prev['case_mix_component']:+.3f} of that, with a confidence interval straddling
-  zero, and re-picking the threshold recovers about 5% more. Neither comfortable
+  zero — and only {prev['sensitivity']['admission_time_covariates_only']:+.3f} when
+  the adjustment uses covariates fixed at admission rather than six hours of care
+  process. Re-picking the threshold recovers about 5% more. Neither comfortable
   explanation — different patients, stale operating point — survives contact with
   the numbers.
-- **Between units in one hospital**, discrimination survives intact (MICU
-  {unit['auroc_home']:.3f} against SICU {unit['auroc_sicu']:.3f}, overlapping
-  intervals) while utility at the frozen threshold collapses from
-  {unit['utility_home']:.3f} to {unit['utility_sicu']:.3f}. Retuning the threshold
-  alone recovers it to {unit['utility_sicu_retuned']:.3f}. The septic rate is
-  {unit['prevalence_home']:.1f}% in the MICU and {unit['prevalence_sicu']:.1f}% in
-  the SICU, and a threshold tuned where sepsis is common fires far too often where
-  it is rare.
+- **Between units in one hospital**, the AUROC difference is
+  {unit['auroc_difference']:+.3f} (95% CI {unit['auroc_difference_ci'][0]:+.3f} to
+  {unit['auroc_difference_ci'][1]:+.3f}), which does not establish a ranking loss,
+  while utility at the frozen threshold falls from {unit['utility_home']:.3f} to
+  {unit['utility_sicu']:.3f} (95% CI {unit['utility_sicu_ci'][0]:.3f} to
+  {unit['utility_sicu_ci'][1]:.3f}). A threshold chosen on a separate half of the
+  SICU and scored on the remainder recovers it to {unit['utility_sicu_local']:.3f}.
+  The septic rate is {unit['prevalence_home']:.1f}% in the MICU and
+  {unit['prevalence_sicu']:.1f}% in the SICU.
 
-**The practical reading: an operating point does not transfer, and it is cheap to
-fix.** Any new site or unit should re-pick its threshold on its own data before
-anything is switched on.
+**The practical reading: the operating point is what fails to transfer.** Any new
+site or unit should select its threshold on its own labelled outcomes before
+anything is switched on. That is not free — it requires local outcome data — but it
+requires no retraining, and the normalised utility score is itself prevalence-
+sensitive, so part of the movement between units is the metric responding to a
+different septic rate rather than the model behaving differently.
 """
         )
 

@@ -67,6 +67,14 @@ BASELINE_COLUMNS = [
     "WBC_n_obs", "Lactate_n_obs", "Creatinine_n_obs", "BUN_n_obs", "Platelets_n_obs",
 ]
 
+# The covariates that are unambiguously fixed at admission. The full list adds six
+# hours of early vitals and ordering volume, which buys separation but is care
+# process rather than patient characteristic -- and care process is plausibly a
+# mediator of the very site difference being adjusted for. Both are reported.
+BASELINE_ONLY_COLUMNS = [
+    "age", "gender", "unit_micu", "unit_sicu", "unit_unknown", "hosp_adm_time",
+]
+
 TRIM = (1.0, 99.0)          # weight percentiles, reported alongside the result
 MIN_ESS_FRACTION = 0.05     # below this the reweighted estimate is a handful of patients
 MAX_PROPENSITY_AUC = 0.99   # above this the two cohorts barely overlap at all
@@ -97,7 +105,10 @@ def run(
     del val, val_scorer
 
     # --- score hospital A's test split and all of hospital B ----------------
-    site_a = _score_cohort(booster, features, cfg.processed_dir / "test.parquet", threshold)
+    site_a = _score_cohort(
+        booster, features, cfg.processed_dir / "test.parquet", threshold,
+        covariates=BASELINE_COLUMNS,
+    )
     log(f"hospital A test:  AUROC {site_a['auroc']:.4f}, utility {site_a['utility']:.4f}")
 
     site_b = _score_cohort(
@@ -131,8 +142,14 @@ def run(
     gap = site_a["utility"] - site_b["utility"]
     case_mix = utility_b_weighted - site_b["utility"]
     degradation = site_a["utility"] - utility_b_weighted
+
     _assert_decomposition(gap, case_mix, degradation)
     _assert_overlap(diagnostics)
+
+    # --- sensitivity: the estimand is a choice, so vary it and report -------
+    sensitivity = _sensitivity(reference, site_a, site_b, threshold, case_mix_baseline=case_mix)
+    for name, value in sensitivity.items():
+        log(f"sensitivity[{name}]: case-mix component {value:+.4f}")
 
     prevalence_b_weighted = _weighted_prevalence(site_b, row_weight)
 
@@ -179,7 +196,7 @@ def run(
     prose = _prose(
         site_a, site_b, gap, case_mix, degradation, case_mix_share,
         auroc_b_weighted, prevalence_b_weighted, diagnostics, ci, threshold, n_boot,
-        utility_a_retuned, utility_b_retuned,
+        utility_a_retuned, utility_b_retuned, sensitivity,
     )
 
     return ExperimentResult(
@@ -207,6 +224,7 @@ def run(
             "prevalence_b": site_b["prevalence"],
             "prevalence_b_reweighted": prevalence_b_weighted,
             "covariates": BASELINE_COLUMNS,
+            "sensitivity": sensitivity,
             "trim_percentiles": list(TRIM),
             **diagnostics,
         },
@@ -329,6 +347,40 @@ def _weighted_prevalence(site: dict, row_weight: np.ndarray) -> float:
     return float((per_admission * label).sum() / per_admission.sum())
 
 
+def _sensitivity(reference, site_a, site_b, threshold, case_mix_baseline) -> dict:
+    """The same decomposition under two defensible alternative choices.
+
+    Neither replaces the pre-registered estimand -- changing that after seeing the
+    result is the failure this repository argues against -- and both are reported
+    because a number that moves when a reasonable choice moves should be presented
+    as a range, not a point.
+
+    1. **Reference = hospital A's test split.** The specification named A's
+       *training* split as the reference distribution, and the comparison is
+       against A's *test* utility. That is a hybrid: the population being matched
+       to is not the population being compared with.
+    2. **Admission-time covariates only.** The main list includes six hours of
+       vitals and ordering volume, which are care process. Adjusting for a
+       mediator of site practice can absorb part of the very effect being
+       measured.
+    """
+    out = {"pre_registered": float(case_mix_baseline)}
+
+    variants = {
+        "reference_is_a_test": (site_a["covariates"], BASELINE_COLUMNS),
+        "admission_time_covariates_only": (reference, BASELINE_ONLY_COLUMNS),
+    }
+    for name, (ref, columns) in variants.items():
+        ref_cols = ref[columns]
+        target_cols = site_b["covariates"][columns]
+        design, labels, is_b = _propensity_design(ref_cols, target_cols)
+        weights, _ = _fit_weights(design, labels, is_b)
+        row_weight = weights.reindex(site_b["groups"]).to_numpy()
+        reweighted = weighted_utility(site_b["scorer"], site_b["alerts"], row_weight)
+        out[name] = float(reweighted - site_b["utility"])
+    return out
+
+
 # --------------------------------------------------------------------------
 # Uncertainty
 # --------------------------------------------------------------------------
@@ -434,6 +486,7 @@ def _assert_overlap(d: dict) -> None:
 def _prose(
     site_a, site_b, gap, case_mix, degradation, share, auroc_bw,
     prevalence_bw, d, ci, threshold, n_boot, utility_a_retuned, utility_b_retuned,
+    sensitivity,
 ) -> str:
     direction = (
         "most of the gap is case mix" if share > 0.6 else
@@ -474,6 +527,16 @@ def _prose(
         f"bootstrap that refits the propensity model on every replicate, so the "
         f"uncertainty of the reweighting is inside the interval rather than assumed "
         f"away.\n\n"
+        f"That component is not robust to how the adjustment is specified, which is "
+        f"itself the result. Matching to hospital A's test split rather than its "
+        f"training split gives {sensitivity['reference_is_a_test']:+.4f}; using only "
+        f"covariates fixed at admission — dropping the six hours of early vitals and "
+        f"ordering volume, which are care process and plausibly mediators of the site "
+        f"difference being adjusted for — gives "
+        f"{sensitivity['admission_time_covariates_only']:+.4f}. The pre-registered "
+        f"specification is the one reported above; these are reported beside it "
+        f"because a number that moves when a defensible choice moves belongs in the "
+        f"open as a range.\n\n"
         f"Two cautions on reading the second number as degradation. The adjustment "
         f"can only correct for the {len(BASELINE_COLUMNS)} covariates it was given, "
         f"so anything that differs between two health systems and is not in that list "
