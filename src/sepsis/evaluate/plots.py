@@ -21,6 +21,12 @@ PALETTE = {
     "gru": "#3f9e6a",
     "ensemble": "#8e5bd0",
 }
+# Every piece of chrome -- text, spines, ticks, grid, legend frame -- is drawn in
+# this one colour, which exists only to be found and replaced. ``_save`` rewrites it
+# to ``currentColor`` in the SVG, so the figure takes its ink from whatever the page
+# is using and follows the reader's theme. Nothing else in the palette is near it.
+INK_SENTINEL = "#123456"
+
 plt.rcParams.update(
     {
         "figure.dpi": 130,
@@ -30,8 +36,34 @@ plt.rcParams.update(
         "axes.spines.top": False,
         "axes.spines.right": False,
         "font.size": 9,
+        "text.color": INK_SENTINEL,
+        "axes.labelcolor": INK_SENTINEL,
+        "axes.titlecolor": INK_SENTINEL,
+        "axes.edgecolor": INK_SENTINEL,
+        "xtick.color": INK_SENTINEL,
+        "ytick.color": INK_SENTINEL,
+        "grid.color": INK_SENTINEL,
+        "legend.edgecolor": INK_SENTINEL,
+        "legend.facecolor": "none",
+        "figure.facecolor": "none",
+        "axes.facecolor": "none",
+        "savefig.facecolor": "none",
+        "savefig.transparent": True,
     }
 )
+
+# Curves are drawn from every distinct threshold, which on 119,000 scored hours can
+# be tens of thousands of vertices -- invisible on screen and enormous in SVG.
+CURVE_POINTS = 1500
+
+
+def thin(*arrays, n: int = CURVE_POINTS):
+    """Evenly subsample parallel curve arrays, always keeping both endpoints."""
+    length = len(arrays[0])
+    if length <= n:
+        return arrays
+    idx = np.unique(np.linspace(0, length - 1, n).astype(int))
+    return tuple(np.asarray(a)[idx] for a in arrays)
 
 
 def _colour(name: str) -> str:
@@ -39,10 +71,45 @@ def _colour(name: str) -> str:
 
 
 def _save(fig, path: Path) -> Path:
+    """Write a transparent SVG whose ink follows the page rather than fighting it.
+
+    A PNG cannot do this: it carries its own background and its own black text, so
+    on a dark page it arrives as a lit slab and the only remedy is to dim it. An SVG
+    with ``currentColor`` ink and no background is theme-native by construction --
+    one asset, correct in both themes, and sharp at any zoom.
+
+    Text is left as paths (matplotlib's default) so the layout does not depend on
+    the reader having the font matplotlib measured with; paths carry a fill and are
+    recoloured by the same substitution as everything else.
+    """
+    path = path.with_suffix(".svg")
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path)
+    fig.savefig(path, transparent=True)
     plt.close(fig)
+
+    markup = path.read_text()
+    for form in (INK_SENTINEL, INK_SENTINEL.upper()):
+        markup = markup.replace(form, "currentColor")
+    _assert_recoloured(markup, path)
+    path.write_text(markup)
     return path
+
+
+def _assert_recoloured(markup: str, path: Path) -> None:
+    """A figure that kept a hardcoded ink colour is unreadable in one of the themes.
+
+    The failure is silent and theme-dependent: it looks perfect to whoever generated
+    it and invisible to half the readers, so it is checked rather than trusted.
+    """
+    if "currentColor" not in markup:
+        raise ValueError(f"{path.name}: no ink was recoloured; the sentinel never reached the SVG")
+    for stray in ("#000000", "#000)", "black"):
+        if stray in markup:
+            raise ValueError(
+                f"{path.name}: contains hardcoded {stray!r}, which will be invisible "
+                f"on a dark ground. Every mark must be either currentColor or a "
+                f"palette colour chosen to work on both."
+            )
 
 
 def discrimination(
@@ -56,22 +123,22 @@ def discrimination(
     """
     fig, axes = plt.subplots(1, 2, figsize=(9.5, 4.2))
     for name, (y, s) in results.items():
-        fpr, tpr, _ = roc_curve(y, s)
+        fpr, tpr = thin(*roc_curve(y, s)[:2])
         axes[0].plot(fpr, tpr, label=name, color=_colour(name), lw=1.6)
-        prec, rec, _ = precision_recall_curve(y, s)
+        prec, rec = thin(*precision_recall_curve(y, s)[:2])
         axes[1].plot(rec, prec, label=name, color=_colour(name), lw=1.6)
 
-    axes[0].plot([0, 1], [0, 1], ls=":", c="#bbb", lw=1)
+    axes[0].plot([0, 1], [0, 1], ls=":", c=INK_SENTINEL, alpha=.35, lw=1)
     axes[0].set(xlabel="False positive rate", ylabel="True positive rate", title="ROC")
     base = float(np.mean(next(iter(results.values()))[0]))
-    axes[1].axhline(base, ls=":", c="#bbb", lw=1)
+    axes[1].axhline(base, ls=":", c=INK_SENTINEL, alpha=.35, lw=1)
     axes[1].set(
         xlabel="Recall", ylabel="Precision",
         title=f"Precision-recall (base rate {base:.1%})",
     )
     axes[0].legend(frameon=False, fontsize=8)
     fig.suptitle(f"Hour-level discrimination — {tag}", y=1.02, fontsize=11)
-    return _save(fig, cfg.figures_dir / f"discrimination_{tag}.png")
+    return _save(fig, cfg.figures_dir / f"discrimination_{tag}.svg")
 
 
 def utility_curves(
@@ -87,16 +154,16 @@ def utility_curves(
         axes[0].plot(peak["threshold"], peak["utility"], "o", color=c, ms=4)
         axes[1].plot(peak["alert_rate"], peak["utility"], "o", color=c, ms=4)
 
-    axes[0].axhline(0, ls=":", c="#bbb", lw=1)
+    axes[0].axhline(0, ls=":", c=INK_SENTINEL, alpha=.35, lw=1)
     axes[0].set(xlabel="Decision threshold", ylabel="Normalised utility", title="Utility vs threshold")
-    axes[1].axhline(0, ls=":", c="#bbb", lw=1)
+    axes[1].axhline(0, ls=":", c=INK_SENTINEL, alpha=.35, lw=1)
     axes[1].set(
         xscale="log", xlabel="Fraction of ICU hours alerting (log)",
         ylabel="Normalised utility", title="Utility vs alert burden",
     )
     axes[1].legend(frameon=False, fontsize=8)
     fig.suptitle(f"Operating points — {tag}", y=1.02, fontsize=11)
-    return _save(fig, cfg.figures_dir / f"utility_{tag}.png")
+    return _save(fig, cfg.figures_dir / f"utility_{tag}.svg")
 
 
 def calibration(
@@ -113,13 +180,13 @@ def calibration(
             ls="-" if "calibrated" in name else "--",
         )
         lim = max(lim, curve["predicted"].max(), curve["observed"].max())
-    ax.plot([0, lim], [0, lim], ls=":", c="#999", lw=1, label="perfect")
+    ax.plot([0, lim], [0, lim], ls=":", c=INK_SENTINEL, alpha=.45, lw=1, label="perfect")
     ax.set(
         xlabel="Predicted risk", ylabel="Observed frequency",
         title=f"Reliability — {tag}", xlim=(0, lim * 1.02), ylim=(0, lim * 1.02),
     )
     ax.legend(frameon=False, fontsize=8)
-    return _save(fig, cfg.figures_dir / f"calibration_{tag}.png")
+    return _save(fig, cfg.figures_dir / f"calibration_{tag}.svg")
 
 
 def lead_time(
@@ -141,7 +208,7 @@ def lead_time(
         title=f"Alert lead time — {model or 'model'} on {tag} "
               f"({summary.get('detection_rate', float('nan')):.0%} detected before onset)",
     )
-    return _save(fig, cfg.figures_dir / f"lead_time_{tag}.png")
+    return _save(fig, cfg.figures_dir / f"lead_time_{tag}.svg")
 
 
 def effect_sizes(screen: pd.DataFrame, cfg: Config = CFG, top: int = 25) -> Path:
@@ -158,7 +225,7 @@ def effect_sizes(screen: pd.DataFrame, cfg: Config = CFG, top: int = 25) -> Path
         title=f"Strongest univariate separation ({subtitle})",
     )
     ax.tick_params(axis="y", labelsize=7)
-    return _save(fig, cfg.figures_dir / "univariate_effects.png")
+    return _save(fig, cfg.figures_dir / "univariate_effects.svg")
 
 
 def drift(report: pd.DataFrame, cfg: Config = CFG, top: int = 25) -> Path:
@@ -170,12 +237,12 @@ def drift(report: pd.DataFrame, cfg: Config = CFG, top: int = 25) -> Path:
     ]
     ax.barh(top_rows["feature"], top_rows["psi"], color=colours, alpha=0.9)
     for x, label in ((0.1, "moderate"), (0.25, "material")):
-        ax.axvline(x, ls=":", c="#777", lw=1)
+        ax.axvline(x, ls=":", c=INK_SENTINEL, alpha=.45, lw=1)
         ax.text(x, len(top_rows) - 0.5, f" {label}", fontsize=7, color="#777", va="top")
     ax.set(xlabel="Population Stability Index  (hospital A → hospital B)",
            title="Largest cross-site distribution shift")
     ax.tick_params(axis="y", labelsize=7)
-    return _save(fig, cfg.figures_dir / "drift_psi.png")
+    return _save(fig, cfg.figures_dir / "drift_psi.svg")
 
 
 def importance(
@@ -192,7 +259,7 @@ def importance(
     axes[1].set(xlabel="Mean |SHAP| (log-odds)", title="TreeSHAP attribution")
     for ax in axes:
         ax.tick_params(axis="y", labelsize=7)
-    return _save(fig, cfg.figures_dir / "importance.png")
+    return _save(fig, cfg.figures_dir / "importance.svg")
 
 
 def optuna_history(history: pd.DataFrame, cfg: Config = CFG) -> Path:
@@ -204,13 +271,13 @@ def optuna_history(history: pd.DataFrame, cfg: Config = CFG) -> Path:
                alpha=0.7, label="completed")
     if len(pruned):
         ax.scatter(pruned["number"], [complete["value"].min()] * len(pruned), s=10,
-                   marker="x", color="#bbb", label="pruned")
+                   marker="x", color=INK_SENTINEL, alpha=.5, label="pruned")
     ax.plot(complete["number"], complete["value"].cummax(), color="#e2703a", lw=1.8,
             label="running best")
     ax.set(xlabel="Trial", ylabel="Mean out-of-fold utility",
            title="Hyperparameter search (objective = clinical utility)")
     ax.legend(frameon=False, fontsize=8)
-    return _save(fig, cfg.figures_dir / "optuna_history.png")
+    return _save(fig, cfg.figures_dir / "optuna_history.svg")
 
 
 def external_validation(table: pd.DataFrame, cfg: Config = CFG) -> Path:
@@ -227,4 +294,4 @@ def external_validation(table: pd.DataFrame, cfg: Config = CFG) -> Path:
         ax.set_title(title)
     axes[0].legend(frameon=False, fontsize=8)
     fig.suptitle("Generalisation to an unseen health system", y=1.03, fontsize=11)
-    return _save(fig, cfg.figures_dir / "external_validation.png")
+    return _save(fig, cfg.figures_dir / "external_validation.svg")

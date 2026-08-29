@@ -14,15 +14,15 @@ import pandas as pd
 from .config import CFG, Config
 
 FIGURES = [
-    ("univariate_effects.png", "Univariate separation between septic and non-septic admissions, FDR-controlled."),
-    ("drift_psi.png", "Features that move most between the two hospital systems."),
-    ("optuna_history.png", "Hyperparameter search, scored on clinical utility rather than AUROC."),
-    ("importance.png", "Split gain versus TreeSHAP attribution for the tuned booster."),
-    ("discrimination_test.png", "ROC and precision-recall on the held-out hospital A test set."),
-    ("utility_test.png", "Normalised utility against threshold and against alert burden."),
-    ("calibration_test.png", "Reliability before and after isotonic recalibration, on the held-out test split."),
-    ("lead_time_test.png", "Hours of warning before clinical onset, for the admissions the model catches."),
-    ("external_validation.png", "Internal test versus the unseen second hospital."),
+    ("univariate_effects.svg", "Univariate separation between septic and non-septic admissions, FDR-controlled."),
+    ("drift_psi.svg", "Features that move most between the two hospital systems."),
+    ("optuna_history.svg", "Hyperparameter search, scored on clinical utility rather than AUROC."),
+    ("importance.svg", "Split gain versus TreeSHAP attribution for the tuned booster."),
+    ("discrimination_test.svg", "ROC and precision-recall on the held-out hospital A test set."),
+    ("utility_test.svg", "Normalised utility against threshold and against alert burden."),
+    ("calibration_test.svg", "Reliability before and after isotonic recalibration, on the held-out test split."),
+    ("lead_time_test.svg", "Hours of warning before clinical onset, for the admissions the model catches."),
+    ("external_validation.svg", "Internal test versus the unseen second hospital."),
 ]
 
 

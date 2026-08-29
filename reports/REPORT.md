@@ -295,36 +295,36 @@ Blend weights were optimised against validation utility and then frozen. `margin
 
 **Univariate separation between septic and non-septic admissions, FDR-controlled.**
 
-![univariate_effects.png](figures/univariate_effects.png)
+![univariate_effects.svg](figures/univariate_effects.svg)
 
 **Features that move most between the two hospital systems.**
 
-![drift_psi.png](figures/drift_psi.png)
+![drift_psi.svg](figures/drift_psi.svg)
 
 **Hyperparameter search, scored on clinical utility rather than AUROC.**
 
-![optuna_history.png](figures/optuna_history.png)
+![optuna_history.svg](figures/optuna_history.svg)
 
 **Split gain versus TreeSHAP attribution for the tuned booster.**
 
-![importance.png](figures/importance.png)
+![importance.svg](figures/importance.svg)
 
 **ROC and precision-recall on the held-out hospital A test set.**
 
-![discrimination_test.png](figures/discrimination_test.png)
+![discrimination_test.svg](figures/discrimination_test.svg)
 
 **Normalised utility against threshold and against alert burden.**
 
-![utility_test.png](figures/utility_test.png)
+![utility_test.svg](figures/utility_test.svg)
 
 **Reliability before and after isotonic recalibration, on the held-out test split.**
 
-![calibration_test.png](figures/calibration_test.png)
+![calibration_test.svg](figures/calibration_test.svg)
 
 **Hours of warning before clinical onset, for the admissions the model catches.**
 
-![lead_time_test.png](figures/lead_time_test.png)
+![lead_time_test.svg](figures/lead_time_test.svg)
 
 **Internal test versus the unseen second hospital.**
 
-![external_validation.png](figures/external_validation.png)
+![external_validation.svg](figures/external_validation.svg)

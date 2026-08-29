@@ -8,7 +8,6 @@ Markdown dependency to install.
 
 from __future__ import annotations
 
-import base64
 import html
 import json
 import re
@@ -37,11 +36,25 @@ def inline(text: str) -> str:
     return out
 
 
-def image_data_uri(rel: str) -> str | None:
+def figure_markup(rel: str, alt: str) -> str | None:
+    """Inline the figure's SVG so its ink follows the page.
+
+    Deliberately not a data: URI in an ``<img>``. An image is a separate document,
+    so ``currentColor`` inside it resolves against nothing and the figure would keep
+    whatever colour it was born with -- which is the entire problem these figures
+    were regenerated to solve. Inlined, the SVG inherits ``color`` from the page and
+    is correct in both themes from one asset.
+    """
     path = REPORTS / rel
     if not path.exists():
         return None
-    return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode()
+    markup = path.read_text()
+    markup = markup[markup.index("<svg"):]  # drop the XML declaration and DOCTYPE
+    # matplotlib writes explicit dimensions; the page needs it to scale to the column.
+    markup = re.sub(r'(<svg[^>]*?)\swidth="[^"]*"', r"\1", markup, count=1)
+    markup = re.sub(r'(<svg[^>]*?)\sheight="[^"]*"', r"\1", markup, count=1)
+    markup = markup.replace("<svg ", f'<svg role="img" aria-label="{html.escape(alt)}" ', 1)
+    return markup
 
 
 def render_table(rows: list[str]) -> str:
@@ -99,13 +112,13 @@ def to_html(md: str, hooks: dict | None = None) -> tuple[str, str]:
         image = re.match(r"^!\[(.*?)\]\((.*?)\)$", stripped)
         if image:
             flush()
-            uri = image_data_uri(image.group(2))
             caption = pending_caption or image.group(1)
             pending_caption = None
-            if uri:
+            svg = figure_markup(image.group(2), caption)
+            if svg:
                 parts.append(
                     '<figure class="plate">'
-                    f'<img src="{uri}" alt="{html.escape(caption)}">'
+                    f'<div class="plate-art">{svg}</div>'
                     f"<figcaption>{inline(caption)}</figcaption></figure>"
                 )
             i += 1
@@ -226,7 +239,6 @@ CSS = """
   --flag:       #b33a1f;
   --stable:     #2f7d5c;
   --shadow:     0 1px 2px rgba(22,35,43,.06), 0 8px 24px -16px rgba(22,35,43,.28);
-  --plate-dim:  none;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -242,8 +254,7 @@ CSS = """
     --flag:       #e0714f;
     --stable:     #5fb58c;
     --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
-    --plate-dim:  brightness(.86);
-  }
+    }
 }
 :root[data-theme="dark"] {
   --paper:      #10171b;
@@ -258,7 +269,6 @@ CSS = """
   --flag:       #e0714f;
   --stable:     #5fb58c;
   --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
-  --plate-dim:  brightness(.86);
 }
 
 * { box-sizing: border-box; }
@@ -465,17 +475,13 @@ tbody td strong { color: var(--signal); font-weight: 600; }
   box-shadow: var(--shadow);
   overflow: hidden;
 }
-.plate img {
-  display: block;
-  width: 100%;
-  height: auto;
-  /* The figures are opaque white PNGs, so on the dark ground they arrive as nine
-     lit slabs. Dimming them is a viewing accommodation and nothing more: the fix
-     would be theme-neutral plots, which is a change to matplotlib output rather
-     than to CSS. Carried on a token so the value resolves in all three theme
-     states, including the un-stamped one. */
-  filter: var(--plate-dim);
+.plate-art {
+  /* The figures are transparent SVG drawn in currentColor, so the ink follows the
+     page and no dimming, plate background or filter is needed in either theme. */
+  color: var(--ink-soft);
+  overflow-x: auto;
 }
+.plate-art svg { display: block; width: 100%; height: auto; }
 .plate figcaption {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: .7rem;

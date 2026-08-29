@@ -44,7 +44,7 @@ jobs:
                    reports/experiment_unit_transfer.csv reports/experiment_mechanism.json; do
             [ -f "$f" ] || { echo "::error::$f is missing; the report cannot be built"; missing=1; }
           done
-          figures=$(ls reports/figures/*.png 2>/dev/null | wc -l)
+          figures=$(ls reports/figures/*.svg 2>/dev/null | wc -l)
           if [ "$figures" -lt 1 ]; then
             echo "::error::no figures in reports/figures/; the page would publish without them"
             missing=1
