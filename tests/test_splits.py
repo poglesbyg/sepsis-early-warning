@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import nopeek
 import pandas as pd
 import pytest
 
@@ -52,6 +53,30 @@ def test_splits_share_no_patients():
         assert not (pats & seen), "an admission leaked across splits"
         seen |= pats
     assert seen == set(ids)
+
+
+def test_splits_are_disjoint_in_every_way_that_matters():
+    """Beyond shared admissions: byte-identical rows on both sides leak too.
+
+    A duplicated export or a merge that fanned out puts the same hour in train
+    and test without either split sharing a patient id, which the check above
+    would not see.
+    """
+    df = _toy_frame()
+    ids = df["patient_id"].unique()
+    train_ids, test_ids = ids[: len(ids) // 2], ids[len(ids) // 2 :]
+    train = df[df["patient_id"].isin(set(train_ids))]
+    test = df[df["patient_id"].isin(set(test_ids))]
+
+    nopeek.assert_split_clean(train, test, group="patient_id")
+
+
+def test_a_row_level_split_is_rejected():
+    """The check has to be able to fail, or it is decoration."""
+    df = _toy_frame()
+    report = nopeek.verify_split(df.iloc[::2], df.iloc[1::2], group="patient_id")
+    assert not report.ok
+    assert any(leak.kind == "group_overlap" for leak in report.leaks)
 
 
 def test_describe_counts_admissions_not_rows():
